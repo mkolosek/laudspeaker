@@ -186,8 +186,6 @@ services:
       - laudspeaker_default
 
   laudspeaker-web:
-    profiles:
-      - "testing"
     image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
     container_name: laudspeaker-web
     ports:
@@ -209,8 +207,6 @@ services:
       - laudspeaker_default
 
   laudspeaker-queue:
-    profiles:
-      - "testing"
     image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
     container_name: laudspeaker-queue
     command: "queue"
@@ -228,8 +224,6 @@ services:
       - laudspeaker_default
 
   laudspeaker-cron:
-    profiles:
-      - "testing"
     image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
     container_name: laudspeaker-cron
     command: "cron"
@@ -248,9 +242,6 @@ services:
 
   s3-createbuckets:
     image: minio/mc
-    profiles:
-      - "testing"
-      - gui
     depends_on:
       s3:
         condition: service_healthy
@@ -271,8 +262,6 @@ services:
       context: ./local-env/
       dockerfile: Dockerfile.initenv
     container_name: init-connectors
-    profiles:
-      - testing
     depends_on:
       laudspeaker-web:
         condition: service_healthy

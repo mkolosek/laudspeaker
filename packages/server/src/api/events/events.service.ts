@@ -1193,14 +1193,19 @@ export class EventsService {
 
       try {
         for (const thisEvent of MobileBatchDto.batch) {
-          if (thisEvent.source === 'message') {
+          if (
+            thisEvent.source === 'message' &&
+            thisEvent.event === '$delivered'
+          )
+            continue;
+          if (thisEvent.source === 'message' && thisEvent.event === '$opened') {
             const clickHouseRecord: ClickHouseMessage = {
               workspaceId: thisEvent.payload.workspaceID,
               stepId: thisEvent.payload.stepID,
               customerId: thisEvent.payload.customerID,
               templateId: String(thisEvent.payload.templateID),
               messageId: thisEvent.payload.messageID,
-              event: thisEvent.event === '$delivered' ? 'delivered' : 'opened',
+              event: 'opened',
               eventProvider: ClickHouseEventProvider.PUSH,
               processed: false,
               createdAt: new Date(),

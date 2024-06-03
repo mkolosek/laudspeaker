@@ -616,7 +616,7 @@ export class MessageSender {
       return;
     }
     let textWithInsertedTags, titleWithInsertedTags: string | undefined;
-    let ret: ClickHouseMessage[];
+    let ret: ClickHouseMessage[] = [];
 
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
@@ -643,7 +643,7 @@ export class MessageSender {
           event: 'error',
           createdAt: new Date(),
           eventProvider: ClickHouseEventProvider.PUSH,
-          messageId: null,
+          messageId: err.toString(),
           stepId: stepID,
           customerId: customerID,
           templateId: String(templateID),
@@ -669,7 +669,7 @@ export class MessageSender {
             event: 'error',
             createdAt: new Date(),
             eventProvider: ClickHouseEventProvider.PUSH,
-            messageId: null,
+            messageId: e.toString(),
             stepId: stepID,
             customerId: customerID,
             templateId: String(templateID),
@@ -681,7 +681,7 @@ export class MessageSender {
 
     const messaging = admin.messaging(firebaseApp);
 
-    const data = {
+    let data = {
       stepID,
       customerID,
       messageID: randomUUID(),
@@ -702,47 +702,79 @@ export class MessageSender {
       );
     }
     if (quietHours) data['quietHours'] = JSON.stringify(quietHours);
-
-    const messageId = await messaging.send({
-      token: iosDeviceToken,
-      data,
-      notification: {
-        title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
-        body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
-      },
-      android: {
+    let messageId;
+    try {
+      messageId = await messaging.send({
+        token: iosDeviceToken,
+        data,
         notification: {
-          sound: 'default',
-          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+          title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
+          body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
         },
-        priority: 'high',
-      },
-      apns: {
-        headers: {
-          'apns-priority': '5', // Specify priority as needed
+        android: {
+          priority: 'high',
         },
-        payload: {
-          aps: {
-            badge: 1,
-            sound: 'default',
+        apns: {
+          headers: {
+            'apns-priority': '10',
+          },
+          payload: {
+            aps: {
+              badge: 1,
+              sound: 'default',
+            },
           },
         },
-      },
-    });
-    this.log(
-      `${JSON.stringify({
-        message: 'iOS Push sent via: Firebase',
-        token: iosDeviceToken,
-        result: messageId,
-        title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
-        body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
-      })}}`,
-      this.handleIOS.name,
-      session,
-      account.email
-    );
-    ret = [
-      {
+      });
+      ret.push({
+        stepId: stepID,
+        customerId: customerID,
+        createdAt: new Date(),
+        event: 'delivered',
+        eventProvider: ClickHouseEventProvider.PUSH,
+        messageId: messageId,
+        templateId: String(templateID),
+        workspaceId: workspace.id,
+        processed: false,
+      });
+      this.log(
+        `${JSON.stringify({
+          message: 'iOS Push sent via: Firebase',
+          token: iosDeviceToken,
+          result: messageId,
+          title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
+          body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
+        })}}`,
+        this.handleIOS.name,
+        session,
+        account.email
+      );
+      if (trackingEmail) {
+        this.phClient.capture({
+          distinctId: trackingEmail,
+          event: 'message_sent',
+          properties: {
+            type: 'firebase',
+            step: stepID,
+            customer: customerID,
+            template: templateID,
+          },
+        });
+      }
+    } catch (err) {
+      ret.push({
+        stepId: stepID,
+        customerId: customerID,
+        createdAt: new Date(),
+        event: 'error',
+        eventProvider: ClickHouseEventProvider.PUSH,
+        messageId: err.toString(),
+        templateId: String(templateID),
+        workspaceId: workspace.id,
+        processed: false,
+      });
+    } finally {
+      ret.push({
         stepId: stepID,
         customerId: customerID,
         createdAt: new Date(),
@@ -752,21 +784,9 @@ export class MessageSender {
         templateId: String(templateID),
         workspaceId: workspace.id,
         processed: false,
-      },
-    ];
-    if (trackingEmail) {
-      this.phClient.capture({
-        distinctId: trackingEmail,
-        event: 'message_sent',
-        properties: {
-          type: 'firebase',
-          step: stepID,
-          customer: customerID,
-          template: templateID,
-        },
       });
+      return ret;
     }
-    return ret;
   }
 
   /**
@@ -801,13 +821,15 @@ export class MessageSender {
     if (!androidDeviceToken) {
       return;
     }
+    let textWithInsertedTags, titleWithInsertedTags: string | undefined;
+    let ret: ClickHouseMessage[] = [];
+
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
       relations: ['teams.organization.workspaces'],
     });
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
-    let textWithInsertedTags, titleWithInsertedTags: string | undefined;
-    let ret: ClickHouseMessage[];
+
     try {
       textWithInsertedTags = await this.tagEngine.parseAndRender(
         pushText,
@@ -827,7 +849,7 @@ export class MessageSender {
           event: 'error',
           createdAt: new Date(),
           eventProvider: ClickHouseEventProvider.PUSH,
-          messageId: null,
+          messageId: err.toString(),
           stepId: stepID,
           customerId: customerID,
           templateId: String(templateID),
@@ -853,7 +875,7 @@ export class MessageSender {
             event: 'error',
             createdAt: new Date(),
             eventProvider: ClickHouseEventProvider.PUSH,
-            messageId: null,
+            messageId: e.toString(),
             stepId: stepID,
             customerId: customerID,
             templateId: String(templateID),
@@ -865,9 +887,7 @@ export class MessageSender {
 
     const messaging = admin.messaging(firebaseApp);
 
-    const data = {
-      title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
-      body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
+    let data = {
       stepID,
       customerID,
       templateID: templateID.toString(),
@@ -890,39 +910,79 @@ export class MessageSender {
     }
 
     if (quietHours) data['quietHours'] = JSON.stringify(quietHours);
-
-    const messageId = await messaging.send({
-      token: androidDeviceToken,
-      data: data,
-      android: {
-        priority: 'high',
-      },
-      apns: {
-        headers: {
-          'apns-priority': '5',
+    let messageId;
+    try {
+      messageId = await messaging.send({
+        token: androidDeviceToken,
+        data,
+        notification: {
+          title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
+          body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
         },
-        payload: {
-          aps: {
-            badge: 1,
-            sound: 'default',
+        android: {
+          priority: 'high',
+        },
+        apns: {
+          headers: {
+            'apns-priority': '10',
+          },
+          payload: {
+            aps: {
+              badge: 1,
+              sound: 'default',
+            },
           },
         },
-      },
-    });
-    this.log(
-      `${JSON.stringify({
-        message: 'Android Push sent via: Firebase',
-        token: androidDeviceToken,
-        result: messageId,
-        title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
-        body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
-      })}}`,
-      this.handleAndroid.name,
-      session,
-      account.email
-    );
-    ret = [
-      {
+      });
+      ret.push({
+        stepId: stepID,
+        customerId: customerID,
+        createdAt: new Date(),
+        event: 'delivered',
+        eventProvider: ClickHouseEventProvider.PUSH,
+        messageId: messageId,
+        templateId: String(templateID),
+        workspaceId: workspace.id,
+        processed: false,
+      });
+      this.log(
+        `${JSON.stringify({
+          message: 'Android Push sent via: Firebase',
+          token: androidDeviceToken,
+          result: messageId,
+          title: titleWithInsertedTags.slice(0, this.MAXIMUM_PUSH_TITLE_LENGTH),
+          body: textWithInsertedTags.slice(0, this.MAXIMUM_PUSH_LENGTH),
+        })}}`,
+        this.handleAndroid.name,
+        session,
+        account.email
+      );
+      if (trackingEmail) {
+        this.phClient.capture({
+          distinctId: trackingEmail,
+          event: 'message_sent',
+          properties: {
+            type: 'firebase',
+            step: stepID,
+            customer: customerID,
+            template: templateID,
+          },
+        });
+      }
+    } catch (err) {
+      ret.push({
+        stepId: stepID,
+        customerId: customerID,
+        createdAt: new Date(),
+        event: 'error',
+        eventProvider: ClickHouseEventProvider.PUSH,
+        messageId: err.toString(),
+        templateId: String(templateID),
+        workspaceId: workspace.id,
+        processed: false,
+      });
+    } finally {
+      ret.push({
         stepId: stepID,
         customerId: customerID,
         createdAt: new Date(),
@@ -932,21 +992,9 @@ export class MessageSender {
         templateId: String(templateID),
         workspaceId: workspace.id,
         processed: false,
-      },
-    ];
-    if (trackingEmail) {
-      this.phClient.capture({
-        distinctId: trackingEmail,
-        event: 'message_sent',
-        properties: {
-          type: 'firebase',
-          step: stepID,
-          customer: customerID,
-          template: templateID,
-        },
       });
+      return ret;
     }
-    return ret;
   }
 
   /**

@@ -1447,8 +1447,8 @@ export class CronService {
               const accountWithConnections: Account =
                 await queryRunner.manager.findOne(Account, {
                   where: {
-                    id: delayedJourneys[journeysIndex].workspace.organization.owner
-                      .id,
+                    id: delayedJourneys[journeysIndex].workspace.organization
+                      .owner.id,
                   },
                   relations: [
                     'teams.organization.workspaces',

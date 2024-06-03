@@ -1397,16 +1397,16 @@ export class EventsService {
     primaryKeyName?: string,
     event?: EventDto
   ): Promise<{ customer: any; findType: FindType }> {
-
-    let { customer, findType } = await this.customersService.findOrCreateCustomerBySearchOptions(
-      workspaceId,
-      {
-        primaryKey: { name: primaryKeyName, value: primaryKeyValue },
-      },
-      session,
-      {},
-      event
-    );
+    let { customer, findType } =
+      await this.customersService.findOrCreateCustomerBySearchOptions(
+        workspaceId,
+        {
+          primaryKey: { name: primaryKeyName, value: primaryKeyValue },
+        },
+        session,
+        {},
+        event
+      );
 
     return { customer, findType };
   }

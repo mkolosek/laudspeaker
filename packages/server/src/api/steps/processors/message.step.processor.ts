@@ -226,13 +226,15 @@ export class MessageStepProcessor extends WorkerHost {
         let nextJob;
         const workspace =
           job.data.owner.teams?.[0]?.organization?.workspaces?.[0];
-        
-        const workspaceIds = job.data.owner.teams?.[0]?.organization?.workspaces?.map(workspace => workspace.id);
 
-        if(job.data.owner.teams?.[0]?.organization.plan.messageLimit != -1){
+        const workspaceIds =
+          job.data.owner.teams?.[0]?.organization?.workspaces?.map(
+            (workspace) => workspace.id
+          );
+
+        if (job.data.owner.teams?.[0]?.organization.plan.messageLimit != -1) {
           //off for now for perf reasons
-          // to do 
-
+          // to do
           //await this.organizationService.checkOrganizationMessageLimit(
           //  workspaceIds || [], 1 , job.data.owner.teams?.[0]?.organization.plan.messageLimit
           //);
@@ -390,13 +392,16 @@ export class MessageStepProcessor extends WorkerHost {
           switch (template.type) {
             case TemplateType.EMAIL:
               const mailgunChannel = workspace.mailgunConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
+                (connection) =>
+                  connection.id === job.data.step?.metadata?.connectionId
               );
               const sendgridChannel = workspace.sendgridConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
+                (connection) =>
+                  connection.id === job.data.step?.metadata?.connectionId
               );
               const resendChannel = workspace.resendConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
+                (connection) =>
+                  connection.id === job.data.step?.metadata?.connectionId
               );
 
               const emailProvider = mailgunChannel
@@ -429,17 +434,21 @@ export class MessageStepProcessor extends WorkerHost {
                 case 'mailgun':
                   key = mailgunChannel.apiKey;
                   sendingDomain = mailgunChannel.sendingDomain;
-                  const mailgunSendingOption = mailgunChannel.sendingOptions.find(
-                    ({ id }) => id === job.data.step?.metadata?.sendingOptionId
-                  );
+                  const mailgunSendingOption =
+                    mailgunChannel.sendingOptions.find(
+                      ({ id }) =>
+                        id === job.data.step?.metadata?.sendingOptionId
+                    );
                   from = mailgunSendingOption.sendingName;
                   sendingEmail = mailgunSendingOption.sendingEmail;
                   break;
                 case 'sendgrid':
                   key = sendgridChannel.apiKey;
-                  const sendgridSendingOption = sendgridChannel.sendingOptions.find(
-                    ({ id }) => id === job.data.step?.metadata?.sendingOptionId
-                  );
+                  const sendgridSendingOption =
+                    sendgridChannel.sendingOptions.find(
+                      ({ id }) =>
+                        id === job.data.step?.metadata?.sendingOptionId
+                    );
                   from = sendgridSendingOption.sendingEmail;
                   break;
                 case 'resend':
@@ -498,9 +507,10 @@ export class MessageStepProcessor extends WorkerHost {
               // }
               break;
             case TemplateType.PUSH:
-              const pushChannel = workspace.pushConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
-              );
+              // Temporarily disabling until we have ability to select push channel in UI
+              // const pushChannel = workspace.pushConnections.find(
+              //   (connection) => connection.id === job.data.step?.metadata?.connectionId
+              // );
 
               switch (job.data.step.metadata.selectedPlatform) {
                 case 'All':
@@ -511,7 +521,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.Android?.credentials,
+                        workspace?.pushPlatforms?.Android?.credentials,
+                      // pushChannel?.pushPlatforms?.Android?.credentials,
                       deviceToken: job.data.customer.androidDeviceToken,
                       pushTitle: template.pushObject.settings.Android.title,
                       pushText:
@@ -535,7 +546,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.iOS?.credentials,
+                        workspace?.pushPlatforms?.iOS?.credentials,
+                      // pushChannel?.pushPlatforms?.iOS?.credentials,
                       deviceToken: job.data.customer.iosDeviceToken,
                       pushTitle: template.pushObject.settings.iOS.title,
                       pushText: template.pushObject.settings.iOS.description,
@@ -560,7 +572,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.iOS?.credentials,
+                        workspace?.pushPlatforms?.iOS?.credentials,
+                      // pushChannel?.pushPlatforms?.iOS?.credentials,
                       deviceToken: job.data.customer.iosDeviceToken,
                       pushTitle: template.pushObject.settings.iOS.title,
                       pushText: template.pushObject.settings.iOS.description,
@@ -585,7 +598,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.Android?.credentials,
+                        workspace?.pushPlatforms?.Android?.credentials,
+                      // pushChannel?.pushPlatforms?.Android?.credentials,
                       deviceToken: job.data.customer.androidDeviceToken,
                       pushTitle: template.pushObject.settings.Android.title,
                       pushText:

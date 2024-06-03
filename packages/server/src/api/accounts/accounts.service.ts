@@ -854,7 +854,7 @@ export class AccountsService extends BaseJwtHelper {
       //console.log("products are",JSON.stringify(products,null, 2))
 
       // Find the product by name
-      const product = products.data.find(p => p.name === productName);
+      const product = products.data.find((p) => p.name === productName);
 
       if (!product) {
         throw new Error('Product not found');
@@ -874,38 +874,44 @@ export class AccountsService extends BaseJwtHelper {
     }
   }
 
-  async createCheckoutSession(accountId: string, productName: string, trialDays: number, session: string) {
-
+  async createCheckoutSession(
+    accountId: string,
+    productName: string,
+    trialDays: number,
+    session: string
+  ) {
     const priceId = await this.findPriceIdByProductName(productName);
     //console.log("price id is", priceId);
-    
+
     try {
       const paymentLink = await this.stripeClient.paymentLinks.create({
-        line_items: [{
-          price: priceId,
-          quantity: 1,
-        }],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
         metadata: {
           accountId,
         },
         payment_method_collection: 'if_required',
         allow_promotion_codes: true,
-        automatic_tax: {enabled: true},
+        automatic_tax: { enabled: true },
         // Set up subscription details
         subscription_data: {
           trial_period_days: trialDays,
           trial_settings: {
             end_behavior: {
-              missing_payment_method: 'pause'
-            }
-          }
+              missing_payment_method: 'pause',
+            },
+          },
         },
         after_completion: {
-          type: 'redirect', 
+          type: 'redirect',
           redirect: {
-            url: "http://" + process.env.FRONTEND_URL + "/payment-gate"
-          }
-        }
+            url: 'http://' + process.env.FRONTEND_URL + '/payment-gate',
+          },
+        },
         //success_url: 'http://your_success_url_here',
         //cancel_url: 'http://your_cancel_url_here',
       });
@@ -922,26 +928,34 @@ export class AccountsService extends BaseJwtHelper {
     }
   }
 
-  async checkActivePlanForUser(userId: string, session: string): Promise<boolean> {
-    this.debug(`Checking active plan for user ${userId}`, this.checkActivePlanForUser.name, session, userId);
+  async checkActivePlanForUser(
+    userId: string,
+    session: string
+  ): Promise<boolean> {
     try {
       // Find the related organization using the userId as the owner
       const organization = await this.organizationRepository.findOne({
         where: { owner: { id: userId } },
         relations: ['plan'],
       });
-  
+
       if (!organization) {
-        this.warn('User does not own any organization', this.checkActivePlanForUser.name, session, userId);
+        this.warn(
+          'User does not own any organization',
+          this.checkActivePlanForUser.name,
+          session,
+          userId
+        );
         return false;
       }
-  
+
       // Check if the organization's plan is active
-      const isActive = organization.plan && organization.plan.activePlan == true;
+      const isActive =
+        organization.plan && organization.plan.activePlan == true;
       return isActive;
     } catch (error) {
       this.error(error, this.checkActivePlanForUser.name, session, userId);
-      throw new HttpException('Error checking active plan', HttpStatus.INTERNAL_SERVER_ERROR);
+      throw error;
     }
   }
 }

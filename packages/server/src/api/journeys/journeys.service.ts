@@ -1740,7 +1740,7 @@ export class JourneysService {
         isActive: true,
       });
 
-      if(organization.plan.activeJourneyLimit != -1){
+      if (organization.plan.activeJourneyLimit != -1) {
         if (activeJourneysCount + 1 > organization.plan.activeJourneyLimit) {
           throw new HttpException(
             'Active journeys limit has been exceeded',
@@ -1748,7 +1748,7 @@ export class JourneysService {
           );
         }
       }
-      
+
       const accountWithConnections = await queryRunner.manager.findOne(
         Account,
         {

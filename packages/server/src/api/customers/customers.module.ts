@@ -37,7 +37,7 @@ function getProvidersList() {
     AudiencesHelper,
     S3Service,
     JourneyLocationsService,
-    CacheService
+    CacheService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {

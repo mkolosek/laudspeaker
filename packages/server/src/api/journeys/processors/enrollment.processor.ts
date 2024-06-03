@@ -124,18 +124,14 @@ export class EnrollmentProcessor extends WorkerHost {
     let collectionName: string;
     let count: number;
 
-    try
-    {
-      ({ collectionName, count } =
-        await this.customersService.getAudienceSize(
-          job.data.account,
-          job.data.journey.inclusionCriteria,
-          job.data.session,
-          null
-        )
-      );
-    }
-    catch(error) {
+    try {
+      ({ collectionName, count } = await this.customersService.getAudienceSize(
+        job.data.account,
+        job.data.journey.inclusionCriteria,
+        job.data.session,
+        null
+      ));
+    } catch (error) {
       this.error(
         error,
         this.process.name,

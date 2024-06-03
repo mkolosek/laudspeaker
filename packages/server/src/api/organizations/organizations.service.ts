@@ -477,12 +477,15 @@ export class OrganizationService {
     return invite;
   }
 
-  public async checkOrganizationMessageLimit(workspaceIds: string[], messagesToSend = 1, customerMessageLimit: number) {
-    
+  public async checkOrganizationMessageLimit(
+    workspaceIds: string[],
+    messagesToSend = 1,
+    customerMessageLimit: number
+  ) {
     if (workspaceIds.length === 0) {
       return;
     }
-    
+
     const res = await this.clickhouseClient.query({
       query: `SELECT COUNT(*) FROM message_status WHERE workspaceId IN {workspaceIds:String}`,
       query_params: {
@@ -499,7 +502,7 @@ export class OrganizationService {
     if (messagesCount + messagesToSend > customerMessageLimit) {
       throw new HttpException(
         'Message limit has been exceeded',
-         HttpStatus.PAYMENT_REQUIRED
+        HttpStatus.PAYMENT_REQUIRED
       );
     }
 

@@ -68,7 +68,6 @@ import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity
 import { OrganizationService } from '@/api/organizations/organizations.service';
 import { CacheService } from '@/common/services/cache.service';
 
-
 @Injectable()
 @Processor('{transition}', {
   stalledInterval: process.env.TRANSITION_PROCESSOR_STALLED_INTERVAL
@@ -647,7 +646,7 @@ export class TransitionProcessor extends WorkerHost {
     let job;
     const organization = owner.teams[0].organization;
     const workspace = organization.workspaces?.[0];
-    
+
     // Rate limiting and sending quiet hours will be stored here
     type MessageSendType =
       | 'SEND' // should send

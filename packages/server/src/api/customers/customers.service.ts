@@ -320,16 +320,13 @@ export class CustomersService {
   }
 
   async checkCustomerLimit(organization: Organization, customersToAdd = 1) {
-
-    this.debug(`in checkCustomerLimte`, this.checkCustomerLimit.name, "session");
-
     const customersInOrganization = await this.CustomerModel.count({
       workspaceId: {
         $in: organization.workspaces.map((workspace) => workspace.id),
       },
     });
 
-    if(organization.plan.customerLimit != -1){
+    if (organization.plan.customerLimit != -1) {
       if (
         customersInOrganization + customersToAdd >
         organization.plan.customerLimit
@@ -340,7 +337,7 @@ export class CustomersService {
         );
       }
     }
-    
+
     return customersInOrganization;
   }
 
@@ -1264,40 +1261,42 @@ export class CustomersService {
   // get keys that weren't marked as primary but may be used
   // as channels for sending messages (e.g. email, email_address,
   // phone, phone_number, etc..)
-  async getMessageChannelsCustomerKeys(
-    workspaceId: string
-  ): Promise<string[]> {
+  async getMessageChannelsCustomerKeys(workspaceId: string): Promise<string[]> {
     let keys = [];
 
     const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
 
     const rules = {
-      email: ["^email",  "^email_address"],
-      phone: ["^phone",  "^phone_number"],
-      ios: ["^iosDeviceToken"],
-      android: ["^androidDeviceToken"]
+      email: ['^email', '^email_address'],
+      phone: ['^phone', '^phone_number'],
+      ios: ['^iosDeviceToken'],
+      android: ['^androidDeviceToken'],
     };
 
-    for(const customerKey of customerKeys) {
-      if(customerKey.isPrimary || ( customerKey.type !== AttributeType.STRING && customerKey.type !== AttributeType.EMAIL ) )
+    for (const customerKey of customerKeys) {
+      if (
+        customerKey.isPrimary ||
+        (customerKey.type !== AttributeType.STRING &&
+          customerKey.type !== AttributeType.EMAIL)
+      )
         continue;
 
       let customerKeyName = customerKey.key;
 
-      for(const [channel, channelRules] of Object.entries(rules)) {
+      for (const [channel, channelRules] of Object.entries(rules)) {
         let matchFound = false;
 
-        for(const regexRule of channelRules) {
-          let regex = new RegExp(regexRule, "i");
+        for (const regexRule of channelRules) {
+          let regex = new RegExp(regexRule, 'i');
           let result = regex.exec(customerKeyName);
 
-          if(result) {
+          if (result) {
             matchFound = true;
             break;
           }
         }
 
-        if(matchFound) {
+        if (matchFound) {
           keys.push(customerKeyName);
 
           this.logger.log(
@@ -1321,11 +1320,10 @@ export class CustomersService {
     let result: CustomerSearchOptions = {
       primaryKey: {},
       messageChannels: {},
-      correlationValue: ""
+      correlationValue: '',
     };
 
-    if(!object)
-    {
+    if (!object) {
       _.merge(result, searchOptionsInitial);
       return result;
     }
@@ -1333,8 +1331,7 @@ export class CustomersService {
     result.primaryKey.name = object.primaryKeyName;
     result.primaryKey.value = object.primaryKeyValue;
 
-    if(result.primaryKey.value && !result.primaryKey.name)
-    {
+    if (result.primaryKey.value && !result.primaryKey.name) {
       let primaryKey = await this.getPrimaryKeyStrict(workspaceId, session);
       result.primaryKey.name = primaryKey?.key;
     }
@@ -1342,12 +1339,17 @@ export class CustomersService {
     result.correlationValue = object.correlationValue;
 
     // try to find customers via message channel fields
-    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(workspaceId);
+    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(
+      workspaceId
+    );
 
-    for(const messageChannelsKey of messageChannelsKeys) {
-      let objectFieldValue = this.getFieldValueFromObject(object, messageChannelsKey);
+    for (const messageChannelsKey of messageChannelsKeys) {
+      let objectFieldValue = this.getFieldValueFromObject(
+        object,
+        messageChannelsKey
+      );
 
-      if(objectFieldValue) {
+      if (objectFieldValue) {
         result.messageChannels[messageChannelsKey] = objectFieldValue;
       }
     }
@@ -1358,15 +1360,17 @@ export class CustomersService {
   }
 
   getFieldValueFromObject(object: any, fieldName: string): any {
-    if(!object)
-      return null;
+    if (!object) return null;
 
-    let objectToUse:any = object;
+    let objectToUse: any = object;
 
-    if(object.$fcm && (fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken'))
+    if (
+      object.$fcm &&
+      (fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken')
+    )
       objectToUse = object.$fcm;
 
-    return objectToUse[fieldName]
+    return objectToUse[fieldName];
   }
 
   /**
@@ -1389,7 +1393,8 @@ export class CustomersService {
       workspaceId,
       searchOptionsInitial,
       session,
-      object);
+      object
+    );
 
     const findConditions: Array<Object> = [];
 
@@ -1401,7 +1406,7 @@ export class CustomersService {
       });
     }
 
-    for(const attributeName in searchOptions.messageChannels) {
+    for (const attributeName in searchOptions.messageChannels) {
       findConditions.push({
         [attributeName]: searchOptions.messageChannels[attributeName],
         workspaceId,
@@ -1430,23 +1435,22 @@ export class CustomersService {
         if (
           findType == FindType.PRIMARY_KEY &&
           searchOptions.primaryKey.name &&
-          customers[i][searchOptions.primaryKey.name] == searchOptions.primaryKey.value
+          customers[i][searchOptions.primaryKey.name] ==
+            searchOptions.primaryKey.value
         ) {
           result.push({
             customer: customers[i],
-            findType
+            findType,
           });
-        } else if (
-          findType == FindType.MESSAGE_CHANNEL
-        ) {
+        } else if (findType == FindType.MESSAGE_CHANNEL) {
           // find which field from the customer matches the object's
-          for(const attributeName in searchOptions.messageChannels) {
+          for (const attributeName in searchOptions.messageChannels) {
             let objectFieldValue = searchOptions.messageChannels[attributeName];
 
-            if(objectFieldValue == customers[i][attributeName]) {
+            if (objectFieldValue == customers[i][attributeName]) {
               result.push({
                 customer: customers[i],
-                findType
+                findType,
               });
 
               break;
@@ -1458,16 +1462,18 @@ export class CustomersService {
         ) {
           result.push({
             customer: customers[i],
-            findType
+            findType,
           });
         } else if (
           findType == FindType.OTHER_IDS &&
           searchOptions.correlationValue &&
-          customers[i].other_ids.includes(searchOptions.correlationValue.toString())
+          customers[i].other_ids.includes(
+            searchOptions.correlationValue.toString()
+          )
         ) {
           result.push({
             customer: customers[i],
-            findType
+            findType,
           });
         }
       }
@@ -1503,16 +1509,17 @@ export class CustomersService {
     let findType: FindType;
     let result: CustomerSearchOptionResult = {
       customer: null,
-      findType: null
+      findType: null,
     };
 
     const searchResults = await this.findCustomersBySearchOptions(
       workspaceId,
       searchOptionsInitial,
       session,
-      object);
+      object
+    );
 
-    if(searchResults.length > 0) {
+    if (searchResults.length > 0) {
       result = searchResults[0];
     }
 
@@ -1535,19 +1542,19 @@ export class CustomersService {
     customerUpsertData: Record<string, any>,
     object?: Record<string, any>
   ): Promise<CustomerSearchOptionResult> {
-
     const searchOptions = await this.extractSearchOptionsFromObject(
       workspaceId,
       searchOptionsInitial,
       session,
-      object);
+      object
+    );
 
     let result = await this.findCustomerBySearchOptions(
       workspaceId,
       searchOptions,
       session,
       object
-      );
+    );
 
     // If customer still not found, create a new one
     if (!result.customer) {
@@ -1560,7 +1567,8 @@ export class CustomersService {
       };
 
       if (searchOptions.primaryKey.value && searchOptions.primaryKey.name) {
-        upsertData[searchOptions.primaryKey.name] = searchOptions.primaryKey.value;
+        upsertData[searchOptions.primaryKey.name] =
+          searchOptions.primaryKey.value;
         upsertData['isAnonymous'] = false;
       }
 
@@ -1569,7 +1577,7 @@ export class CustomersService {
       try {
         result.customer = await this.CustomerModel.findOneAndUpdate(
           { _id: newId, workspaceId },
-          { $setOnInsert: { ...upsertData }},
+          { $setOnInsert: { ...upsertData } },
           { upsert: true, new: true }
         );
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
@@ -1582,7 +1590,11 @@ export class CustomersService {
           });
           result.findType = FindType.DUPLICATE_KEY_ERROR; // Optionally, set a different findType to indicate handling of a duplicate key error
         } else {
-          this.error(error, this.findOrCreateCustomerBySearchOptions.name, session);
+          this.error(
+            error,
+            this.findOrCreateCustomerBySearchOptions.name,
+            session
+          );
         }
       }
     }
@@ -1627,7 +1639,10 @@ export class CustomersService {
     session: string
   ): Promise<{ id: string }> {
     try {
-      let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
+      let primaryKey = await this.getPrimaryKeyStrict(
+        auth.workspace.id,
+        session
+      );
 
       if (!primaryKey)
         throw new HttpException(
@@ -1635,17 +1650,21 @@ export class CustomersService {
           HttpStatus.BAD_REQUEST
         );
 
-      let { customer, findType } = await this.findOrCreateCustomerBySearchOptions(
-        auth.workspace.id,
-        {
-          primaryKey: { name: primaryKey.key, value: upsertCustomerDto.primary_key },
-        },
-        session,
-        { ...upsertCustomerDto.properties },
-        // send the upsert proprties once for upsert data and another for 
-        // trying to find customers via message channels
-        { ...upsertCustomerDto.properties }
-      );
+      let { customer, findType } =
+        await this.findOrCreateCustomerBySearchOptions(
+          auth.workspace.id,
+          {
+            primaryKey: {
+              name: primaryKey.key,
+              value: upsertCustomerDto.primary_key,
+            },
+          },
+          session,
+          { ...upsertCustomerDto.properties },
+          // send the upsert proprties once for upsert data and another for
+          // trying to find customers via message channels
+          { ...upsertCustomerDto.properties }
+        );
 
       return Promise.resolve({ id: customer._id });
     } catch (err) {
@@ -4076,17 +4095,21 @@ export class CustomersService {
    *
    * @returns string
    */
-  async getPrimaryKeyStrict(workspaceId: string, session: string): Promise<CustomerKeysDocument> {
-    let primaryKey: CustomerKeysDocument = await this.cacheService.getIgnoreError(
-      "PrimaryKey",
-      workspaceId,
-      async () => {
-        return await this.CustomerKeysModel.findOne({
-          workspaceId,
-          isPrimary: true,
-        });
-      }
-    );
+  async getPrimaryKeyStrict(
+    workspaceId: string,
+    session: string
+  ): Promise<CustomerKeysDocument> {
+    let primaryKey: CustomerKeysDocument =
+      await this.cacheService.getIgnoreError(
+        'PrimaryKey',
+        workspaceId,
+        async () => {
+          return await this.CustomerKeysModel.findOne({
+            workspaceId,
+            isPrimary: true,
+          });
+        }
+      );
 
     return primaryKey;
   }

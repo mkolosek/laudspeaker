@@ -158,7 +158,7 @@ export class AccountsController {
       delete workspace?.pushPlatforms?.Android?.credentials;
       delete workspace?.pushPlatforms?.iOS?.credentials;
 
-      if(process.env.PAYMENTS_ENABLED !== 'true'){
+      if (process.env.PAYMENTS_ENABLED !== 'true') {
         return {
           ...data?.[0],
           workspace: {
@@ -169,7 +169,10 @@ export class AccountsController {
         };
         //return { isActive: true };
       }
-      const isActive = await this.accountsService.checkActivePlanForUser((<Account>user).id, session);
+      const isActive = await this.accountsService.checkActivePlanForUser(
+        (<Account>user).id,
+        session
+      );
 
       //to do
       return {
@@ -354,12 +357,6 @@ export class AccountsController {
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
   async createCheckoutSession(@Req() { user }: Request) {
     const session = randomUUID();
-    this.debug(
-      `Creating checkout session for ${JSON.stringify({ id: (<Account>user).id })}`,
-      this.createCheckoutSession.name,
-      session,
-      (<Account>user).id
-    );
 
     try {
       const url = await this.accountsService.createCheckoutSession(
@@ -370,7 +367,12 @@ export class AccountsController {
       );
       return { url };
     } catch (e) {
-      this.error(e, this.createCheckoutSession.name, session, (<Account>user).id);
+      this.error(
+        e,
+        this.createCheckoutSession.name,
+        session,
+        (<Account>user).id
+      );
       throw e;
     }
   }
@@ -380,21 +382,23 @@ export class AccountsController {
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
   async checkActiveOrganizationPlan(@Req() { user }: Request) {
     const session = randomUUID();
-    this.debug(
-      `Checking active organization plan for user ${JSON.stringify({ id: (<Account>user).id })}`,
-      this.checkActiveOrganizationPlan.name,
-      session,
-      (<Account>user).id
-    );
     try {
       //env flag so self-deploy do not need to pay
-      if(process.env.PAYMENTS_ENABLED !== 'true'){
+      if (process.env.PAYMENTS_ENABLED !== 'true') {
         return { isActive: true };
       }
-      const isActive = await this.accountsService.checkActivePlanForUser((<Account>user).id, session);
+      const isActive = await this.accountsService.checkActivePlanForUser(
+        (<Account>user).id,
+        session
+      );
       return { isActive };
     } catch (e) {
-      this.error(e, this.checkActiveOrganizationPlan.name, session, (<Account>user).id);
+      this.error(
+        e,
+        this.checkActiveOrganizationPlan.name,
+        session,
+        (<Account>user).id
+      );
       throw e;
     }
   }

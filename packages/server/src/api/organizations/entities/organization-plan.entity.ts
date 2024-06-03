@@ -9,10 +9,10 @@ import {
 import { Organization } from './organization.entity';
 
 export const DEFAULT_PLAN: Partial<OrganizationPlan> = {
-  planName: "startup-may-2024",
+  planName: 'startup-may-2024',
   subscribed: false,
   activePlan: false,
-  billingEmail: "none",
+  billingEmail: 'none',
   segmentLimit: 25,
   activeJourneyLimit: 10,
   messageLimit: 100000000,

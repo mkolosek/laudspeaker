@@ -896,7 +896,7 @@ export class AccountsService extends BaseJwtHelper {
         },
         payment_method_collection: 'if_required',
         allow_promotion_codes: true,
-        automatic_tax: { enabled: true },
+        automatic_tax: { enabled: process.env.STRIPE_TAXES === 'true' },
         // Set up subscription details
         subscription_data: {
           trial_period_days: trialDays,
@@ -909,7 +909,7 @@ export class AccountsService extends BaseJwtHelper {
         after_completion: {
           type: 'redirect',
           redirect: {
-            url: 'http://' + process.env.FRONTEND_URL + '/payment-gate',
+            url: process.env.FRONTEND_URL + '/payment-gate',
           },
         },
         //success_url: 'http://your_success_url_here',

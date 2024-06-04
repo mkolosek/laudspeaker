@@ -162,9 +162,19 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
           }),
         ]
       : []),
-    MongooseModule.forRoot(
-      formatMongoConnectionString(process.env.MONGOOSE_URL)
-    ),
+    process.env.DOCUMENT_DB === 'true'
+      ? MongooseModule.forRoot(process.env.DOCUMENT_DB_CONNECTION_STRING, {
+          user: process.env.DOCUMENT_DB_USER,
+          pass: process.env.DOCUMENT_DB_PASS,
+          tls: true,
+          tlsCAFile: process.env.DOCUMENT_DB_CA_FILE,
+          tlsAllowInvalidHostnames: true,
+          directConnection: true,
+          retryWrites: false,
+        })
+      : MongooseModule.forRoot(
+          formatMongoConnectionString(process.env.MONGOOSE_URL)
+        ),
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({

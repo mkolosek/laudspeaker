@@ -612,17 +612,28 @@ export class MessageSender {
     kvPairs: { key: string; value: string }[],
     session: string
   ): Promise<ClickHouseMessage[]> {
-    if (!iosDeviceToken) {
-      return;
-    }
-    let textWithInsertedTags, titleWithInsertedTags: string | undefined;
-    let ret: ClickHouseMessage[] = [];
-
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
       relations: ['teams.organization.workspaces'],
     });
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    if (!iosDeviceToken) {
+      return [
+        {
+          workspaceId: workspace.id,
+          event: 'error',
+          createdAt: new Date(),
+          eventProvider: ClickHouseEventProvider.PUSH,
+          messageId: 'ERR_NO_DEVICE_TOKEN',
+          stepId: stepID,
+          customerId: customerID,
+          templateId: String(templateID),
+          processed: false,
+        },
+      ];
+    }
+    let textWithInsertedTags, titleWithInsertedTags: string | undefined;
+    let ret: ClickHouseMessage[] = [];
 
     try {
       textWithInsertedTags = await this.tagEngine.parseAndRender(
@@ -818,17 +829,28 @@ export class MessageSender {
     kvPairs: { key: string; value: string }[],
     session: string
   ): Promise<ClickHouseMessage[]> {
-    if (!androidDeviceToken) {
-      return;
-    }
-    let textWithInsertedTags, titleWithInsertedTags: string | undefined;
-    let ret: ClickHouseMessage[] = [];
-
     const account = await this.accountRepository.findOne({
       where: { id: accountID },
       relations: ['teams.organization.workspaces'],
     });
     const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
+    if (!androidDeviceToken) {
+      return [
+        {
+          workspaceId: workspace.id,
+          event: 'error',
+          createdAt: new Date(),
+          eventProvider: ClickHouseEventProvider.PUSH,
+          messageId: 'ERR_NO_DEVICE_TOKEN',
+          stepId: stepID,
+          customerId: customerID,
+          templateId: String(templateID),
+          processed: false,
+        },
+      ];
+    }
+    let textWithInsertedTags, titleWithInsertedTags: string | undefined;
+    let ret: ClickHouseMessage[] = [];
 
     try {
       textWithInsertedTags = await this.tagEngine.parseAndRender(

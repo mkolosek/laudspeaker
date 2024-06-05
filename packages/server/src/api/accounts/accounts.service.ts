@@ -882,7 +882,12 @@ export class AccountsService extends BaseJwtHelper {
   ) {
     const priceId = await this.findPriceIdByProductName(productName);
     //console.log("price id is", priceId);
-
+    this.debug(
+      `the created payment link is ${process.env.FRONTEND_URL} + '/payment-gate'`,
+      this.createCheckoutSession.name,
+      session,
+      accountId
+    );
     try {
       const paymentLink = await this.stripeClient.paymentLinks.create({
         line_items: [
@@ -909,14 +914,15 @@ export class AccountsService extends BaseJwtHelper {
         after_completion: {
           type: 'redirect',
           redirect: {
-            url: process.env.FRONTEND_URL + '/payment-gate',
+            //url: process.env.FRONTEND_URL + '/payment-gate',
+            url:  'https://app.laudspeaker.com/home',
           },
         },
         //success_url: 'http://your_success_url_here',
         //cancel_url: 'http://your_cancel_url_here',
       });
       this.debug(
-        `the created payment link is ${paymentLink.url})}`,
+        `the created payment link is ${paymentLink.url}`,
         this.createCheckoutSession.name,
         session,
         accountId

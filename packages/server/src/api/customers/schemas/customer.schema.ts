@@ -123,6 +123,9 @@ export class Customer {
 
   @Prop(raw({}))
   customComponents: Record<string, any>;
+
+  @Prop()
+  laudspeakerSystemSource: string;
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);

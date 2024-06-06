@@ -1410,6 +1410,7 @@ export class EventsService {
         },
         session,
         {},
+        "event",
         event
       );
 

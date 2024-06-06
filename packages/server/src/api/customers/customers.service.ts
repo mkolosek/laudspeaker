@@ -202,6 +202,13 @@ export const systemAttributes: SystemAttribute[] = [
     isArray: false,
     isSystem: true,
   },
+  {
+    id: uuid(),
+    key: 'laudspeakerSystemSource',
+    type: StatementValueType.STRING,
+    isArray: false,
+    isSystem: true,
+  },
 ];
 
 export interface QueryOptions {
@@ -1259,63 +1266,6 @@ export class CustomersService {
     return Promise.resolve(customer);
   }
 
-  // async findOrCreateByCorrelationKVPair(
-  //   workspace: Workspaces,
-  //   dto: EventDto,
-  //   transactionSession: ClientSession
-  // ): Promise<Correlation> {
-  //   let customer: CustomerDocument; // Found customer
-  //   const queryParam = {
-  //     workspaceId: workspace.id,
-  //     $or: [
-  //       { [dto.correlationKey]: dto.correlationValue },
-  //       { other_ids: dto.correlationValue },
-  //     ],
-  //   };
-  //   try {
-  //     customer = await this.CustomerModel.findOne(queryParam)
-  //       .session(transactionSession)
-  //       .exec();
-  //   } catch (err) {
-  //     return Promise.reject(err);
-  //   }
-  //   if (!customer) {
-  //     // When no customer is found with the given correlation, create a new one
-  //     // If the correlationKey is '_id', use it to set the _id of the new customer
-  //     const newCustomerData: any = {
-  //       workspaceId: workspace.id,
-  //       createdAt: new Date(),
-  //     };
-  //     if (dto.correlationKey === '_id') {
-  //       newCustomerData._id = dto.correlationValue;
-  //     } else {
-  //       // If correlationKey is not '_id',
-  //       newCustomerData._id = randomUUID();
-  //     }
-  //     const createdCustomer = new this.CustomerModel(newCustomerData);
-  //     return {
-  //       cust: await createdCustomer.save({ session: transactionSession }),
-  //       found: false,
-  //     };
-  //   } else {
-  //     return { cust: customer, found: true };
-  //   }
-  //   /*
-  //   if (!customer) {
-
-  //     if (!queryParam._id) {
-  //       queryParam._id = randomUUID();
-  //     }
-
-  //     const createdCustomer = new this.CustomerModel(queryParam);
-  //     return {
-  //       cust: await createdCustomer.save({ session: transactionSession }),
-  //       found: false,
-  //     };
-  //   } else return { cust: customer, found: true };
-  //   */
-  // }
-
   // get keys that weren't marked as primary but may be used
   // as channels for sending messages (e.g. email, email_address,
   // phone, phone_number, etc..)
@@ -1440,11 +1390,26 @@ export class CustomersService {
   ): Promise<CustomerSearchOptionResult[]> {
     let result: CustomerSearchOptionResult[] = [];
 
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object:  ${JSON.stringify(object)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
+
     const searchOptions = await this.extractSearchOptionsFromObject(
       workspaceId,
       searchOptionsInitial,
       session,
       object
+    );
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)}`,
+      this.findCustomersBySearchOptions.name,
+      session
     );
 
     const findConditions: Array<Object> = [];
@@ -1480,6 +1445,16 @@ export class CustomersService {
     let customers = await this.CustomerModel.find({
       $or: findConditions,
     });
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       findConditions: ${JSON.stringify(findConditions)},
+       customers: ${JSON.stringify(customers)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
 
     for (const findType of Object.values(FindType)) {
       for (let i = 0; i < customers.length; i++) {
@@ -1529,6 +1504,17 @@ export class CustomersService {
         }
       }
     }
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       findConditions: ${JSON.stringify(findConditions)},
+       customers: ${JSON.stringify(customers)},
+       result: ${JSON.stringify(result)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
 
     // our conditions were not inclusive, something's wrong
     if (customers.length > 0 && result.length == 0) {
@@ -1582,6 +1568,7 @@ export class CustomersService {
    * @param workspaceId
    * @param searchOptionsInitial
    * @param session
+   * @param systemSource (i.e. event, upsert)
    * @param customerUpsertData
    * @param object (e.g. event)
    * @returns customer
@@ -1591,6 +1578,7 @@ export class CustomersService {
     searchOptionsInitial: CustomerSearchOptions,
     session: string,
     customerUpsertData: Record<string, any>,
+    systemSource: string,
     object?: Record<string, any>
   ): Promise<CustomerSearchOptionResult> {
     const searchOptions = await this.extractSearchOptionsFromObject(
@@ -1607,14 +1595,29 @@ export class CustomersService {
       object
     );
 
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       customerUpsertData: ${JSON.stringify(customerUpsertData)},
+       systemSource: ${JSON.stringify(systemSource)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       result: ${JSON.stringify(result)}`,
+      this.findOrCreateCustomerBySearchOptions.name,
+      session
+    );
+
     // If customer still not found, create a new one
     if (!result.customer) {
       const newId = searchOptions.correlationValue || randomUUID();
 
+      // add source information
+      // TODO: need to namespace the user and system attributes
+      // so there won't any collisions
       const upsertData = {
         _id: newId,
         workspaceId,
         createdAt: new Date(),
+        laudspeakerSystemSource: systemSource,
       };
 
       if (searchOptions.primaryKey.value && searchOptions.primaryKey.name) {
@@ -1625,12 +1628,20 @@ export class CustomersService {
 
       _.merge(upsertData, customerUpsertData);
 
+      this.debug(
+        `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+         customerUpsertData: ${JSON.stringify(customerUpsertData)},
+         systemSource: ${JSON.stringify(systemSource)},
+         object: ${JSON.stringify(object)},
+         searchOptions: ${JSON.stringify(searchOptions)},
+         upsertData: ${JSON.stringify(upsertData)}`,
+        this.findOrCreateCustomerBySearchOptions.name,
+        session
+      );
+
       try {
-        result.customer = await this.CustomerModel.findOneAndUpdate(
-          { _id: newId, workspaceId },
-          { $setOnInsert: { ...upsertData } },
-          { upsert: true, new: true }
-        );
+        result.customer = await this.CustomerModel.create(upsertData);
+
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
       } catch (error: any) {
         // Check if the error is a duplicate key error
@@ -1712,6 +1723,7 @@ export class CustomersService {
           },
           session,
           { ...upsertCustomerDto.properties },
+          "upsert",
           // send the upsert proprties once for upsert data and another for
           // trying to find customers via message channels
           { ...upsertCustomerDto.properties }

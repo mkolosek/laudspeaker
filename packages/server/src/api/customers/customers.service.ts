@@ -281,41 +281,65 @@ export class CustomersService {
     (async () => {
       try {
         const collection = this.connection.db.collection('customers');
-        await collection.dropIndexes();
-        await createIndexIfNotExists(collection, 'workspaceId');
+        async function getExistingIndexes(collection) {
+          const indexes = await collection.listIndexes().toArray();
+          return indexes.map((index) => index.key);
+        }
+
+        async function removeObsoleteIndexes(collection, requiredIndexes) {
+          const existingIndexes = await getExistingIndexes(collection);
+          for (const existingIndex of existingIndexes) {
+            const indexKey = JSON.stringify(existingIndex);
+            if (
+              !requiredIndexes.includes(indexKey) &&
+              indexKey !== JSON.stringify({ _id: 1 })
+            ) {
+              await collection.dropIndex(existingIndex);
+            }
+          }
+        }
+
+        const requiredIndexes = [];
+
+        requiredIndexes.push(JSON.stringify({ workspaceId: 1 }));
+        await createIndexIfNotExists(collection, { workspaceId: 1 });
+
+        requiredIndexes.push(JSON.stringify({ other_ids: 1, workspaceId: 1 }));
         await createIndexIfNotExists(collection, {
           other_ids: 1,
           workspaceId: 1,
         });
+
+        requiredIndexes.push(JSON.stringify({ other_ids: 1 }));
+        await createIndexIfNotExists(collection, { other_ids: 1 });
+
+        requiredIndexes.push(JSON.stringify({ _id: 1, workspaceId: 1 }));
+        await createIndexIfNotExists(collection, { _id: 1, workspaceId: 1 });
+
         for (const [channel, channelRules] of Object.entries(rulesRaw)) {
           for (const rule of channelRules) {
-            await createIndexIfNotExists(
-              collection,
-              { [rule]: 1, workspaceId: 1 },
-              {
-                unique: true,
-                partialFilterExpression: { [rule]: { $exists: true } },
-              }
-            );
+            const indexSpec = { [rule]: 1, workspaceId: 1 };
+            requiredIndexes.push(JSON.stringify(indexSpec));
+            await createIndexIfNotExists(collection, indexSpec, {
+              unique: true,
+              partialFilterExpression: { [rule]: { $exists: true } },
+            });
           }
         }
 
         const keyCollection = this.connection.db.collection('customerkeys');
-        await keyCollection.dropIndexes();
         const primaryKeyDocs = keyCollection.find({ isPrimary: true });
         for await (const primaryKey of primaryKeyDocs) {
-          await createIndexIfNotExists(
-            collection,
-            { [primaryKey.key]: 1, workspaceId: 1 },
-            {
-              unique: true,
-              partialFilterExpression: { [primaryKey.key]: { $exists: true } },
-            }
-          );
+          const indexSpec = { [primaryKey.key]: 1, workspaceId: 1 };
+          requiredIndexes.push(JSON.stringify(indexSpec));
+          await createIndexIfNotExists(collection, indexSpec, {
+            unique: true,
+            partialFilterExpression: { [primaryKey.key]: { $exists: true } },
+          });
         }
-      } catch (e) {
-        this.error(e, CustomersService.name, session);
-      }
+
+        await removeObsoleteIndexes(collection, requiredIndexes);
+      } catch (err) {}
     })();
   }
 

@@ -1665,8 +1665,8 @@ export class CustomersService {
 
       try {
         result.customer = await this.CustomerModel.create(upsertData);
-
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
+
       } catch (error: any) {
         // Check if the error is a duplicate key error
         if (error.code === 11000) {
@@ -1695,6 +1695,7 @@ export class CustomersService {
         ? 'iosDeviceTokenSetAt'
         : 'androidDeviceTokenSetAt';
       if (result.customer[deviceTokenField] !== deviceTokenValue)
+
         result.customer = await this.CustomerModel.findOneAndUpdate(
           { _id: result.customer._id, workspaceId },
           {
@@ -2599,12 +2600,15 @@ export class CustomersService {
    * Specifically we can't use unionWith and merge
    *
    */
+  
   async documentDBanySegmentCase(
     account: Account,
     session: string,
     sets: any[],
     collectionName: string,
-    thisCollectionName: string
+    thisCollectionName: string,
+    finalCollectionPrepend: string,
+    andOr?: string
   ) {
     this.debug(
       `document db replacing unionWith`,
@@ -2643,7 +2647,7 @@ export class CustomersService {
     //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
     // Step 2: Bulk insert documents from each new collection into a final collection, in batches
     const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-    const finalCollection = `final_or_cfc_${collectionName}`;
+    const finalCollection = `${finalCollectionPrepend}${collectionName}`;
     await Promise.all(
       newCollectionNames.map(async (newCollName) => {
         const cursor = this.connection.db.collection(newCollName).find();
@@ -2671,8 +2675,34 @@ export class CustomersService {
       })
     );
 
-    // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-    await this.connection.db
+    // Step 3 AND CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
+    if(andOr === 'and'){
+      // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+      await this.connection.db
+      .collection(finalCollection)
+      .aggregate([
+        {
+          $group: {
+            _id: '$customerId', // Group by customerId
+            count: { $sum: 1 },
+            customerId: { $first: '$customerId' },
+          },
+        },
+        { $match: { count: sets.length } },
+        {
+          $project: {
+            _id: '$customerId',
+          },
+        },
+        {
+          $out: thisCollectionName, // Output the final aggregated documents into the same collection
+        },
+      ])
+      .toArray();
+    }
+    // Step 3 OR CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
+    else{
+      await this.connection.db
       .collection(finalCollection)
       .aggregate([
         {
@@ -2691,8 +2721,8 @@ export class CustomersService {
         },
       ])
       .toArray();
-
-    console.log('final colname is', finalCollection);
+    }
+    
 
     //drop all intermediate collections
     try {
@@ -2828,149 +2858,17 @@ export class CustomersService {
       let collectionHandle = this.connection.db.collection(thisCollectionName);
       //if (sets.length > 1) {
       // Add each additional collection to the pipeline for union
-      if (process.env.DOCUMENT_DB == 'true') {
-        this.debug(
-          `document db replacing unionWith`,
-          this.getCustomersFromQuery.name,
+      if (process.env.DOCUMENT_DB === 'true') {
+        
+        await this.documentDBanySegmentCase(
+          account,
           session,
-          account.id
+          sets,
+          collectionName,
+          thisCollectionName,
+          "final_and_cfc_",
+          "and"
         );
-
-        const newCollectionNames = await Promise.all(
-          sets.map(async (collName, index) => {
-            const newCollName = `new_${collName}`;
-            this.debug(
-              `document db new col name ${collName}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            const collectionHandle = this.connection.db.collection(collName);
-            await collectionHandle
-              .aggregate([
-                {
-                  $addFields: { customerId: '$_id' },
-                },
-                {
-                  $project: { _id: 0 },
-                },
-                {
-                  $out: newCollName,
-                },
-              ])
-              .toArray(); // Execute the aggregation pipeline and create new collections
-            return newCollName;
-          })
-        );
-
-        //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-
-        // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-        const finalCollection = `final_and_cfc_${collectionName}`;
-        await Promise.all(
-          newCollectionNames.map(async (newCollName) => {
-            const cursor = this.connection.db.collection(newCollName).find();
-            let batch = [];
-            while (await cursor.hasNext()) {
-              const doc = await cursor.next();
-              batch.push({
-                insertOne: {
-                  document: doc,
-                },
-              });
-
-              if (batch.length >= BATCH_SIZE) {
-                await this.connection.db
-                  .collection(finalCollection)
-                  .bulkWrite(batch);
-                batch = []; // Reset the batch for the next group of documents
-              }
-            }
-
-            // Process any remaining documents in the last batch
-            if (batch.length > 0) {
-              await this.connection.db
-                .collection(finalCollection)
-                .bulkWrite(batch);
-            }
-          })
-        );
-
-        // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-        await this.connection.db
-          .collection(finalCollection)
-          .aggregate([
-            {
-              $group: {
-                _id: '$customerId', // Group by customerId
-                count: { $sum: 1 },
-                customerId: { $first: '$customerId' },
-              },
-            },
-            { $match: { count: sets.length } },
-            {
-              $project: {
-                _id: '$customerId',
-              },
-            },
-            {
-              $out: thisCollectionName, // Output the final aggregated documents into the same collection
-            },
-          ])
-          .toArray();
-        console.log('final colname is', thisCollectionName);
-
-        //drop all intermediate collections
-        try {
-          this.debug(
-            `trying to release finalcollection`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          //toggle for testing segments
-          await this.connection.db.collection(finalCollection).drop();
-          this.debug(
-            `dropped successfully`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        } catch (e) {
-          this.debug(
-            `error dropping collection: ${e}`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        }
-
-        newCollectionNames.map(async (collection) => {
-          try {
-            this.debug(
-              `trying to release collection`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
-            this.debug(
-              `dropped successfully`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          } catch (e) {
-            this.debug(
-              `error dropping collection: ${e}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          }
-        });
       } else {
         sets.forEach((collName) => {
           //console.log("the set is", collName);
@@ -3101,147 +2999,15 @@ export class CustomersService {
         account.id
       );
 
-      if (process.env.DOCUMENT_DB == 'true') {
-        this.debug(
-          `document db replacing unionWith`,
-          this.getCustomersFromQuery.name,
+      if (process.env.DOCUMENT_DB === 'true') {
+        await this.documentDBanySegmentCase(
+          account,
           session,
-          account.id
-        );
-        // Add lookups for each additional collection to the pipeline
-        // Step 1: Create new collections from each set with a new _id and rename _id to customerId
-        const newCollectionNames = await Promise.all(
-          sets.map(async (collName, index) => {
-            const newCollName = `new_${collName}`;
-            this.debug(
-              `document db new col name ${collName}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            const collectionHandle = this.connection.db.collection(collName);
-            await collectionHandle
-              .aggregate([
-                {
-                  $addFields: { customerId: '$_id' },
-                },
-                {
-                  $project: { _id: 0 },
-                },
-                {
-                  $out: newCollName,
-                },
-              ])
-              .toArray(); // Execute the aggregation pipeline and create new collections
-            return newCollName;
-          })
-        );
-        //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-        // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-        const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-        const finalCollection = `final_or_cfc_${collectionName}`;
-        await Promise.all(
-          newCollectionNames.map(async (newCollName) => {
-            const cursor = this.connection.db.collection(newCollName).find();
-            let batch = [];
-            while (await cursor.hasNext()) {
-              const doc = await cursor.next();
-              batch.push({
-                insertOne: {
-                  document: doc,
-                },
-              });
-
-              if (batch.length >= BATCH_SIZE) {
-                await this.connection.db
-                  .collection(finalCollection)
-                  .bulkWrite(batch);
-                batch = []; // Reset the batch for the next group of documents
-              }
-            }
-
-            // Process any remaining documents in the last batch
-            if (batch.length > 0) {
-              await this.connection.db
-                .collection(finalCollection)
-                .bulkWrite(batch);
-            }
-          })
-        );
-
-        // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-        await this.connection.db
-          .collection(finalCollection)
-          .aggregate([
-            {
-              $group: {
-                _id: '$customerId', // Group by customerId
-                customerId: { $first: '$customerId' },
-              },
-            },
-            {
-              $project: {
-                _id: '$customerId',
-              },
-            },
-            {
-              $out: thisCollectionName, // Output the final aggregated documents into the same collection
-            },
-          ])
-          .toArray();
-
-        console.log('final colname is', finalCollection);
-
-        //drop all intermediate collections
-        try {
-          this.debug(
-            `trying to release finalcollection`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-          //toggle for testing segments
-          await this.connection.db.collection(finalCollection).drop();
-          this.debug(
-            `dropped successfully`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        } catch (e) {
-          this.debug(
-            `error dropping collection: ${e}`,
-            this.getCustomersFromQuery.name,
-            session,
-            account.id
-          );
-        }
-
-        newCollectionNames.map(async (collection) => {
-          try {
-            this.debug(
-              `trying to release collection`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-            //toggle for testing segments
-            await this.connection.db.collection(collection).drop();
-            this.debug(
-              `dropped successfully`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          } catch (e) {
-            this.debug(
-              `error dropping collection: ${e}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-          }
-        });
+          sets,
+          collectionName,
+          thisCollectionName,
+          "final_or_cfq_"
+        )
       } else {
         // Add each additional collection to the pipeline
         if (sets.length > 1) {
@@ -3410,157 +3176,16 @@ export class CustomersService {
               const collectionHandle =
                 this.connection.db.collection(thisCollectionName);
 
-              if (process.env.DOCUMENT_DB == 'true') {
-                this.debug(
-                  `document db replacing unionWith`,
-                  this.getCustomersFromQuery.name,
+              if (process.env.DOCUMENT_DB === 'true') {
+                await this.documentDBanySegmentCase(
+                  account,
                   session,
-                  account.id
-                );
-
-                const newCollectionNames = await Promise.all(
-                  sets.map(async (collName, index) => {
-                    const newCollName = `new_${collName}`;
-                    this.debug(
-                      `document db new col name ${collName}`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                    const collectionHandle =
-                      this.connection.db.collection(collName);
-                    await collectionHandle
-                      .aggregate([
-                        {
-                          $addFields: { customerId: '$_id' },
-                        },
-                        {
-                          $project: { _id: 0 },
-                        },
-                        {
-                          $out: newCollName,
-                        },
-                      ])
-                      .toArray(); // Execute the aggregation pipeline and create new collections
-                    return newCollName;
-                  })
-                );
-
-                //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-
-                // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-                const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-                const finalCollection = `final_and_scfq_${collectionName}`;
-                await Promise.all(
-                  newCollectionNames.map(async (newCollName) => {
-                    const cursor = this.connection.db
-                      .collection(newCollName)
-                      .find();
-                    let batch = [];
-                    while (await cursor.hasNext()) {
-                      const doc = await cursor.next();
-                      batch.push({
-                        insertOne: {
-                          document: doc,
-                        },
-                      });
-
-                      if (batch.length >= BATCH_SIZE) {
-                        await this.connection.db
-                          .collection(finalCollection)
-                          .bulkWrite(batch);
-                        batch = []; // Reset the batch for the next group of documents
-                      }
-                    }
-
-                    // Process any remaining documents in the last batch
-                    if (batch.length > 0) {
-                      await this.connection.db
-                        .collection(finalCollection)
-                        .bulkWrite(batch);
-                    }
-                  })
-                );
-
-                // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-                await this.connection.db
-                  .collection(finalCollection)
-                  .aggregate([
-                    {
-                      $group: {
-                        _id: '$customerId', // Group by customerId
-                        count: { $sum: 1 },
-                        customerId: { $first: '$customerId' },
-                      },
-                    },
-                    { $match: { count: sets.length } },
-                    {
-                      $project: {
-                        _id: '$customerId',
-                      },
-                    },
-                    {
-                      $out: thisCollectionName, // Output the final aggregated documents into the same collection
-                    },
-                  ])
-                  .toArray();
-                this.debug(
-                  `document db final col name ${finalCollection}`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-
-                //drop all intermediate collections
-                try {
-                  this.debug(
-                    `trying to release finalcollection`,
-                    this.getCustomersFromQuery.name,
-                    session,
-                    account.id
-                  );
-                  //toggle for testing segments
-                  await this.connection.db.collection(finalCollection).drop();
-                  this.debug(
-                    `dropped successfully`,
-                    this.getCustomersFromQuery.name,
-                    session,
-                    account.id
-                  );
-                } catch (e) {
-                  this.debug(
-                    `error dropping collection: ${e}`,
-                    this.getCustomersFromQuery.name,
-                    session,
-                    account.id
-                  );
-                }
-
-                newCollectionNames.map(async (collection) => {
-                  try {
-                    this.debug(
-                      `trying to release collection`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                    //toggle for testing segments
-                    await this.connection.db.collection(collection).drop();
-                    this.debug(
-                      `dropped successfully`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                  } catch (e) {
-                    this.debug(
-                      `error dropping collection: ${e}`,
-                      this.getCustomersFromQuery.name,
-                      session,
-                      account.id
-                    );
-                  }
-                });
+                  sets,
+                  collectionName,
+                  thisCollectionName,
+                  "final_and_scfq_",
+                  "and"
+                )
               } else {
                 //if (sets.length > 1) {
                 // Add each additional collection to the pipeline for union
@@ -3641,163 +3266,17 @@ export class CustomersService {
 
           const unionAggregation: any[] = [];
 
-          if (process.env.DOCUMENT_DB == 'true') {
-            this.debug(
-              `document db replacing unionWith`,
-              this.getCustomersFromQuery.name,
+          if (process.env.DOCUMENT_DB === 'true') {
+            await this.documentDBanySegmentCase(
+              account,
               session,
-              account.id
-            );
-            // Add lookups for each additional collection to the pipeline
-            // Step 1: Create new collections from each set with a new _id and rename _id to customerId
-            const newCollectionNames = await Promise.all(
-              sets.map(async (collName, index) => {
-                const newCollName = `new_${collName}`;
-                this.debug(
-                  `document db new col name ${collName}`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-                const collectionHandle =
-                  this.connection.db.collection(collName);
-                await collectionHandle
-                  .aggregate([
-                    {
-                      $addFields: { customerId: '$_id' },
-                    },
-                    {
-                      $project: { _id: 0 },
-                    },
-                    {
-                      $out: newCollName,
-                    },
-                  ])
-                  .toArray(); // Execute the aggregation pipeline and create new collections
-                return newCollName;
-              })
-            );
-
-            //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
-
-            // Step 2: Bulk insert documents from each new collection into a final collection, in batches
-            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
-            const finalCollection = `final_${collectionName}`;
-            await Promise.all(
-              newCollectionNames.map(async (newCollName) => {
-                const cursor = this.connection.db
-                  .collection(newCollName)
-                  .find();
-                let batch = [];
-                while (await cursor.hasNext()) {
-                  const doc = await cursor.next();
-                  batch.push({
-                    insertOne: {
-                      document: doc,
-                    },
-                  });
-
-                  if (batch.length >= BATCH_SIZE) {
-                    await this.connection.db
-                      .collection(finalCollection)
-                      .bulkWrite(batch);
-                    batch = []; // Reset the batch for the next group of documents
-                  }
-                }
-
-                // Process any remaining documents in the last batch
-                if (batch.length > 0) {
-                  await this.connection.db
-                    .collection(finalCollection)
-                    .bulkWrite(batch);
-                }
-              })
-            );
-
-            // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
-            await this.connection.db
-              .collection(finalCollection)
-              .aggregate([
-                {
-                  $group: {
-                    _id: '$customerId', // Group by customerId
-                    customerId: { $first: '$customerId' },
-                  },
-                },
-                {
-                  $project: {
-                    _id: '$customerId',
-                  },
-                },
-                {
-                  $out: thisCollectionName, // Output the final aggregated documents into the same collection
-                },
-              ])
-              .toArray();
-
-            this.debug(
-              `document db final col name ${finalCollection}`,
-              this.getCustomersFromQuery.name,
-              session,
-              account.id
-            );
-
-            //drop all intermediate collections
-            try {
-              this.debug(
-                `trying to release finalcollection`,
-                this.getCustomersFromQuery.name,
-                session,
-                account.id
-              );
-              //toggle for testing segments
-              await this.connection.db.collection(finalCollection).drop();
-              this.debug(
-                `dropped successfully`,
-                this.getCustomersFromQuery.name,
-                session,
-                account.id
-              );
-            } catch (e) {
-              this.debug(
-                `error dropping collection: ${e}`,
-                this.getCustomersFromQuery.name,
-                session,
-                account.id
-              );
-            }
-
-            newCollectionNames.map(async (collection) => {
-              try {
-                this.debug(
-                  `trying to release collection`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-                //toggle for testing segments
-                await this.connection.db.collection(collection).drop();
-                this.debug(
-                  `dropped successfully`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-              } catch (e) {
-                this.debug(
-                  `error dropping collection: ${e}`,
-                  this.getCustomersFromQuery.name,
-                  session,
-                  account.id
-                );
-              }
-            });
+              sets,
+              collectionName,
+              thisCollectionName,
+              "final_or_gscfq_"
+            )
           } else {
-            /*
-          [
-            { $group: { _id: "$customerId" } }
-          ];
-          */
+          
             // Add each additional collection to the pipeline
             if (sets.length > 1) {
               sets.forEach((collName) => {
@@ -5205,7 +4684,7 @@ export class CustomersService {
           mongoQuery.source = 'mobile';
           //console.log("mongoquery in eventssegment is ", JSON.stringify(mongoQuery, null, 2) );
 
-          const aggregationPipelineMobile: any[] = [
+          let aggregationPipelineMobile: any[] = [
             { $match: mongoQuery },
             {
               $addFields: {
@@ -5237,36 +4716,89 @@ export class CustomersService {
             },
           },
           */
-            {
-              $merge: {
-                into: intermediateCollection, // specify the target collection name
-                on: '_id', // assuming '_id' is your unique identifier
-                whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
-                whenNotMatched: 'insert', // inserts the document if no match is found
-              },
-            },
-            //to do
           ];
-
-          this.debug(
-            'aggregate mobile query is/n\n',
-            this.customersFromEventStatement.name,
-            session,
-            account.id
-          );
-
-          this.debug(
-            JSON.stringify(aggregationPipelineMobile, null, 2),
-            this.customersFromEventStatement.name,
-            session,
-            account.id
-          );
-
-          //fetch users here
-          const mobileResult: any =
-            await this.eventsService.getCustomersbyEventsMongo(
-              aggregationPipelineMobile
+          if (process.env.DOCUMENT_DB === 'true'){
+            aggregationPipelineMobile.push(
+              {
+                $merge: {
+                  into: "events_test_col",//intermediateCollection, // specify the target collection name
+                  on: '_id', // assuming '_id' is your unique identifier
+                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                  whenNotMatched: 'insert', // inserts the document if no match is found
+                },
+              }
             );
+
+          }
+          else{
+
+            aggregationPipelineMobile.push(
+              {
+                $merge: {
+                  into: intermediateCollection, // specify the target collection name
+                  on: '_id', // assuming '_id' is your unique identifier
+                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                  whenNotMatched: 'insert', // inserts the document if no match is found
+                },
+              }
+            );
+
+          }
+            
+            //to do
+            this.debug(
+              'aggregate mobile query is/n\n',
+              this.customersFromEventStatement.name,
+              session,
+              account.id
+            );
+  
+            this.debug(
+              JSON.stringify(aggregationPipelineMobile, null, 2),
+              this.customersFromEventStatement.name,
+              session,
+              account.id
+            );
+  
+            //fetch users here
+            const mobileResult: any =
+              await this.eventsService.getCustomersbyEventsMongo(
+                aggregationPipelineMobile
+              );
+              
+          if (process.env.DOCUMENT_DB === 'true'){
+            // here we need to add the temp collection back into 
+            /*
+            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+            const finalCollection = `${finalCollectionPrepend}${collectionName}`;
+            await Promise.all(
+        
+            const cursor = this.connection.db.collection(newCollName).find();
+            let batch = [];
+            while (await cursor.hasNext()) {
+              const doc = await cursor.next();
+              batch.push({
+                insertOne: {
+                  document: doc,
+                },
+              });
+
+              if (batch.length >= BATCH_SIZE) {
+                await this.connection.db
+                  .collection(finalCollection)
+                  .bulkWrite(batch);
+                batch = []; // Reset the batch for the next group of documents
+              }
+            }
+
+              // Process any remaining documents in the last batch
+              if (batch.length > 0) {
+                await this.connection.db.collection(finalCollection).bulkWrite(batch);
+              }
+              */
+          }
+
+  
 
           // we do one more merge with mobile users for those who may include the event correlationValues in their other_ids field
           const aggregationPipelineMobileOtherIds: any[] = [

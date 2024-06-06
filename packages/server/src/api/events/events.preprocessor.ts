@@ -163,6 +163,20 @@ export class EventsPreProcessor extends WorkerHost {
     );
   }
 
+   removeDollarSignsFromKeys(obj: any) {
+    const newObj = {};
+    // Iterate through each property in the object
+    for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            const newKey = key.startsWith('$') ? key.substring(1) : key;
+
+            // Recursively call the function if the property is an object
+            newObj[newKey] = typeof obj[key] === 'object' && obj[key] !== null ? this.removeDollarSignsFromKeys(obj[key]) : obj[key];
+        }
+    }
+    return newObj;  
+  }
+
   async handleCustom(
     job: Job<
       {
@@ -217,7 +231,7 @@ export class EventsPreProcessor extends WorkerHost {
         //console.time(`handleCustom - create event ${job.data.session}`)
         await this.eventModel.create([
           {
-            ...job.data.event,
+            ...this.removeDollarSignsFromKeys(job.data.event),
             workspaceId: job.data.workspace.id,
             createdAt: new Date().toISOString(),
           },

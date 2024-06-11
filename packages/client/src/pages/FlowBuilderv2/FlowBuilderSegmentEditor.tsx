@@ -38,6 +38,7 @@ import { DateComponent } from "./Elements/DynamicInput";
 import FilterBuilder from "./FilterBuilder/FilterBuilder";
 import { FC } from "react";
 import Button, { ButtonType } from "components/Elements/Buttonv2";
+import FilterViewer from "./FilterViewer/FilterViewer";
 
 const enrollmentTypes = [
   {
@@ -82,6 +83,9 @@ const FlowBuilderSegmentEditor: FC<FlowBuilderSegmentEditorProps> = ({
   const dispatch = useAppDispatch();
 
   if (!journeyEntrySettings) return <></>;
+
+  console.log("in flow seg editor")
+  console.log("seg settings are", segmentsSettings);
 
   return (
     <div className="m-5 max-h-full overflow-y-scroll w-full bg-white rounded p-5 text-[#111827] font-inter">
@@ -452,14 +456,7 @@ const FlowBuilderSegmentEditor: FC<FlowBuilderSegmentEditorProps> = ({
         {segmentsSettings.type === SegmentsSettingsType.CONDITIONAL && (
           <div className="flex flex-col gap-[10px]">
             <div className="font-semibold text-base">Conditions</div>
-            <FilterBuilder
-              settings={segmentsSettings}
-              onSettingsChange={(settings) =>
-                dispatch(
-                  setSegmentsSettings(settings as ConditionalSegmentsSettings)
-                )
-              }
-            />
+            <FilterViewer settingsQuery={segmentsSettings.query}/>
           </div>
         )}
 

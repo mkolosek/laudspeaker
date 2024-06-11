@@ -78,13 +78,10 @@ const MessageSettings: FC<SidePanelComponentProps<MessageNodeData>> = ({
 
   const getAllTemplates = async () => {
     const { data: templates } = await ApiService.get<{ data: Template[] }>({
-      url: `${ApiConfig.getAllTemplates}`,
+      url: `${ApiConfig.getAllTemplates}?type=${templateType}`,
     });
 
-    const filteredTemplates = templates?.data?.filter(
-      (item: { type?: string }) => item.type === templateType
-    );
-    setTemplateList(filteredTemplates);
+    setTemplateList(templates?.data);
   };
 
   const handleTemplateInlineEdit = () => {

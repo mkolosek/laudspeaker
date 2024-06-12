@@ -39,6 +39,7 @@ import FilterBuilder from "./FilterBuilder/FilterBuilder";
 import { FC } from "react";
 import Button, { ButtonType } from "components/Elements/Buttonv2";
 import FilterViewer from "./FilterViewer/FilterViewer";
+import { JourneyStatus } from "pages/JourneyTablev2/JourneyTablev2";
 
 const enrollmentTypes = [
   {
@@ -69,11 +70,13 @@ const enrollmentTypes = [
 interface FlowBuilderSegmentEditorProps {
   onSave?: () => void;
   onCancel?: () => void;
+  journeyStatus?: JourneyStatus
 }
 
 const FlowBuilderSegmentEditor: FC<FlowBuilderSegmentEditorProps> = ({
   onCancel,
   onSave,
+  journeyStatus,
 }) => {
   const {
     segments: segmentsSettings,
@@ -456,7 +459,18 @@ const FlowBuilderSegmentEditor: FC<FlowBuilderSegmentEditorProps> = ({
         {segmentsSettings.type === SegmentsSettingsType.CONDITIONAL && (
           <div className="flex flex-col gap-[10px]">
             <div className="font-semibold text-base">Conditions</div>
-            <FilterViewer settingsQuery={segmentsSettings.query}/>
+            {journeyStatus === JourneyStatus.DRAFT ? (
+            <FilterBuilder
+                settings={segmentsSettings}
+                onSettingsChange={(settings) =>
+                    dispatch(
+                        setSegmentsSettings(settings as ConditionalSegmentsSettings)
+                    )
+                }
+            />
+        ) : (
+            <FilterViewer settingsQuery={segmentsSettings.query} />
+        )} 
           </div>
         )}
 

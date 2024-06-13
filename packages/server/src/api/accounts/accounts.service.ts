@@ -669,6 +669,8 @@ export class AccountsService extends BaseJwtHelper {
         throw new BadRequestException(
           'Error during onboarding account organization creation'
         );
+      } finally {
+        await queryRunner.release();
       }
     }
 

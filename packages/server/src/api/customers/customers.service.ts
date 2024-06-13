@@ -3774,19 +3774,27 @@ export class CustomersService {
 
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
-        await queryRunner.startTransaction();
 
         const stepIds = [];
-        for (const journeyId of journeyIds) {
-          const steps =
-            await this.stepsService.transactionalfindAllByTypeInJourney(
-              account,
-              StepType.MESSAGE,
-              journeyId,
-              queryRunner,
-              session
-            );
-          stepIds.push(...steps.map((step) => step.id));
+
+        try {
+          for (const journeyId of journeyIds) {
+            const steps =
+              await this.stepsService.transactionalfindAllByTypeInJourney(
+                account,
+                StepType.MESSAGE,
+                journeyId,
+                queryRunner,
+                session
+              );
+            stepIds.push(...steps.map((step) => step.id));
+          }
+        }
+        catch(error) {
+          this.error(error, this.customersFromMessageStatement.name, session);
+          throw error;
+        } finally {
+          await queryRunner.release();
         }
 
         console.log('step ids are,', JSON.stringify(stepIds, null, 2));

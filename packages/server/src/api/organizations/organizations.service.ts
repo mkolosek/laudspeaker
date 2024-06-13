@@ -158,6 +158,9 @@ export class OrganizationService {
     } catch (err) {
       await queryRunner.rollbackTransaction();
       this.error(err, this.update, session, account.id);
+      throw new BadRequestException('Error during update');
+    } finally {
+      await queryRunner.release();
     }
   }
 
@@ -215,6 +218,8 @@ export class OrganizationService {
       await queryRunner.rollbackTransaction();
       this.error(err, this.update, session, account.id);
       throw new BadRequestException('Error during creation');
+    } finally {
+      await queryRunner.release();
     }
   }
 
@@ -361,6 +366,8 @@ export class OrganizationService {
       this.error(error, this.create, session, account.id);
 
       throw error;
+    } finally {
+      await queryRunner.release();
     }
   }
 

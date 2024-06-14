@@ -193,7 +193,7 @@ services:
     ports:
       - "8180:80"
     healthcheck:
-      test: ["CMD", "curl", "-f", "localhost:80"]
+      test: ["CMD", "ping", "-q", "-w 1", "localhost:80"]
       interval: 5s
       timeout: 30s
       retries: 20
@@ -214,7 +214,7 @@ services:
     ports:
       - "8181:3001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "localhost:3001"]
+      test: ["CMD", "ping", "-q", "-w 1", "localhost:3001"]
       interval: 5s
       timeout: 30s
       retries: 20

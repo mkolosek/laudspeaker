@@ -241,12 +241,21 @@ export class EventsPreProcessor extends WorkerHost {
 
       // Always add jobs after committing transactions, otherwise there could be race conditions
       let eventJobs = journeys.map((journey) => ({
+        //to do add here modified
         name: EventType.EVENT,
         data: {
           account: job.data.owner,
           workspace: job.data.workspace,
           event: job.data.event,
-          journey: journey,
+          journey: {
+            ...journey,
+            visualLayout: {
+              edges: [],
+              nodes: []
+            },
+            inclusionCriteria: {
+            }
+          },
           customer: customer,
           session: job.data.session,
         },

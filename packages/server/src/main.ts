@@ -19,13 +19,17 @@ import * as os from 'os';
 
 const morgan = require('morgan');
 
-const numCPUs = process.env.NODE_ENV === 'development' ? 1 : os.cpus().length;
+let numProcesses = 1;
+
+if (process.env.MAX_PROCESS_COUNT_PER_REPLICA)
+  numProcesses = Math.max(1, parseInt(process.env.MAX_PROCESS_COUNT_PER_REPLICA));
 
 if (cluster.isPrimary) {
   console.log(`Primary ${process.pid} is running`);
   console.log(`[${process.env.LAUDSPEAKER_PROCESS_TYPE}] Starting.`);
+  console.log(`Number of processes to create: ${numProcesses}`);
   // Fork workers.
-  for (let i = 0; i < numCPUs; i++) {
+  for (let i = 0; i < numProcesses; i++) {
     cluster.fork();
   }
 

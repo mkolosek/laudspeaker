@@ -1,7 +1,7 @@
-PORT=8080
+PORT=3001
 NODE_ENV=development
-API_BASE_URL=http://localhost:8080/api
-FRONTEND_URL=http://localhost:8080
+API_BASE_URL=https://laudspeaker.ruby.ci/api
+FRONTEND_URL=https://laudspeaker.ruby.ci
 DATABASE_HOST=postgres
 DATABASE_NAME=laudspeaker
 DATABASE_USER=postgres

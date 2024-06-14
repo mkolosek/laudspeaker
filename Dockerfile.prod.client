@@ -10,8 +10,8 @@ ENV REACT_APP_WS_BASE_URL https://api.laudspeaker.com
 ENV REACT_APP_API_BASE_URL=https://api.laudspeaker.com
 ENV REACT_APP_ONBOARDING_API_KEY ONBOARDING-API-KEY
 ENV REACT_APP_POSTHOG_HOST https://app.posthog.com
-ENV REACT_APP_POSTHOG_KEY RxdBl8vjdTwic7xTzoKTdbmeSC1PCzV6sw-x-FKSB-k
-ENV REACT_APP_SENTRY_DSN_URL_FRONTEND=https://2444369e8e13b39377ba90663ae552d1@o4506038702964736.ingest.sentry.io/4506038705192960
+ENV REACT_APP_POSTHOG_KEY=""
+ENV REACT_APP_SENTRY_DSN_URL_FRONTEND=""
 ENV PATH /app/node_modules/.bin:$PATH
 COPY ./packages/client/package.json /app/
 COPY ./package-lock.json /app/

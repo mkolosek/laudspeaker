@@ -186,12 +186,33 @@ services:
       - laudspeaker_default
 
   laudspeaker-web:
-    image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
+    image: kolosek/laudspeaker
     container_name: laudspeaker-web
     ports:
-      - "8080:8080"
+      - "8180:80"
     healthcheck:
-      test: ["CMD", "curl", "-f", "localhost:8080"]
+      test: ["CMD", "curl", "-f", "localhost:80"]
+      interval: 5s
+      timeout: 30s
+      retries: 20
+      start_period: 60s
+    depends_on:
+      init-environment:
+        condition: service_completed_successfully
+      s3-createbuckets:
+        condition: service_completed_successfully
+    env_file:
+      - ./local-env/env-docker-compose
+    networks:
+      - laudspeaker_default
+
+  laudspeaker-api:
+    image: kolosek/laudspeaker
+    container_name: laudspeaker-web
+    ports:
+      - "8181:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "localhost:3001"]
       interval: 5s
       timeout: 30s
       retries: 20
@@ -207,7 +228,7 @@ services:
       - laudspeaker_default
 
   laudspeaker-queue:
-    image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
+    image: kolosek/laudspeaker
     container_name: laudspeaker-queue
     command: "queue"
     healthcheck:
@@ -224,7 +245,7 @@ services:
       - laudspeaker_default
 
   laudspeaker-cron:
-    image: ${LAUDSPEAKER_IMAGE:-laudspeaker/laudspeaker:latest}
+    image: kolosek/laudspeaker
     container_name: laudspeaker-cron
     command: "cron"
     healthcheck:

@@ -27,6 +27,8 @@ services:
     ports:
       - "5532:5432"
     restart: unless-stopped
+    volumes:
+      - ./data:/var/lib/postgresql/data
     networks:
       - laudspeaker_default
 

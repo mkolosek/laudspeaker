@@ -208,7 +208,7 @@ services:
 
   laudspeaker-api:
     image: kolosek/laudspeaker
-    container_name: laudspeaker-web
+    container_name: laudspeaker-api
     ports:
       - "8181:3001"
     healthcheck:

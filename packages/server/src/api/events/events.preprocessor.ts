@@ -245,7 +245,7 @@ export class EventsPreProcessor extends WorkerHost {
         name: EventType.EVENT,
         data: {
           account: job.data.owner,
-          workspace: job.data.workspace,
+          //workspace: job.data.workspace,
           event: job.data.event,
           journey: {
             ...journey,

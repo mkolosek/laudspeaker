@@ -172,7 +172,7 @@ export class EventsProcessor extends WorkerHost {
     job: Job<
       {
         account: Account;
-        workspace: Workspace;
+        //workspace: Workspace;
         journey: Journey;
         customer: CustomerDocument;
         event: any;
@@ -221,8 +221,7 @@ export class EventsProcessor extends WorkerHost {
             where: {
               type: StepType.WAIT_UNTIL_BRANCH,
               journey: { id: job.data.journey.id },
-            },
-            relations: ['workspace.organization.owner', 'journey'],
+            }
           })
         ).filter((el) => el?.metadata?.branches !== undefined);
       }

@@ -6324,34 +6324,6 @@ export class CustomersService {
         );
       }
 
-      const docs = await this.CustomerModel.aggregate([
-        {
-          $match: {
-            workspaceId: workspace.id,
-            isAnonymous: false,
-          },
-        },
-        {
-          $group: {
-            _id: `$${passedPK.asAttribute.key}`,
-            count: { $sum: 1 },
-            docs: { $push: '$$ROOT' },
-          },
-        },
-        {
-          $match: {
-            count: { $gt: 1 },
-          },
-        },
-      ]).option({ allowDiskUse: true });
-
-      if (docs?.length) {
-        throw new HttpException(
-          "Selected primary key can't be used cause it's value has duplicates among already existing users.",
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
       const folderPath = 'import-errors';
       const errorFileName = `errors-${fileData.fileKey}.csv`;
       const fullPath = path.join(folderPath, errorFileName);
@@ -6550,34 +6522,6 @@ export class CustomersService {
       ) {
         throw new HttpException(
           'Field selected as primary not corresponding to saved primary Key',
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
-      const docs = await this.CustomerModel.aggregate([
-        {
-          $match: {
-            workspaceId: workspace.id,
-            isAnonymous: false,
-          },
-        },
-        {
-          $group: {
-            _id: `$${passedPK.asAttribute.key}`,
-            count: { $sum: 1 },
-            docs: { $push: '$$ROOT' },
-          },
-        },
-        {
-          $match: {
-            count: { $gt: 1 },
-          },
-        },
-      ]).option({ allowDiskUse: true });
-
-      if (docs?.length) {
-        throw new HttpException(
-          "Selected primary key can't be used cause it's value has duplicates among already existing users.",
           HttpStatus.BAD_REQUEST
         );
       }

@@ -218,9 +218,8 @@ services:
       - laudspeaker_default
 
   laudspeaker-queue:
-    image: kolosek/laudspeaker
+    image: kolosek/laudspeaker-api
     container_name: laudspeaker-queue
-    command: "npm run start:local:noprebuild -w packages/server -- --debug=9329 --watch"
     healthcheck:
       test: '[ $(find /tmp/laudspeaker-healthcheck-queue -mmin -1 | wc -l) -eq 1 ] || false'
       interval: 10s
@@ -239,9 +238,8 @@ services:
       - laudspeaker_default
 
   laudspeaker-cron:
-    image: kolosek/laudspeaker
+    image: kolosek/laudspeaker-api
     container_name: laudspeaker-cron
-    command: "npm run start:local:noprebuild -w packages/server -- --debug=9429 --watch"
     healthcheck:
       test: '[ $(find /tmp/laudspeaker-healthcheck-cron -mmin -1 | wc -l) -eq 1 ] || false'
       interval: 10s

@@ -227,8 +227,10 @@ services:
       timeout: 30s
       retries: 10
     depends_on:
-      laudspeaker-web:
-        condition: service_healthy
+      init-environment:
+        condition: service_completed_successfully
+      s3-createbuckets:
+        condition: service_completed_successfully
     env_file:
       - ./local-env/env-docker-compose
     networks:
@@ -244,8 +246,10 @@ services:
       timeout: 30s
       retries: 10
     depends_on:
-      laudspeaker-web:
-        condition: service_healthy
+      init-environment:
+        condition: service_completed_successfully
+      s3-createbuckets:
+        condition: service_completed_successfully
     env_file:
       - ./local-env/env-docker-compose
     networks:

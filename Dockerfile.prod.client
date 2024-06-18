@@ -7,8 +7,8 @@ ENV SENTRY_AUTH_TOKEN=${FRONTEND_SENTRY_AUTH_TOKEN}
 ENV REACT_APP_SENTRY_RELEASE=""
 ENV SENTRY_ORG=laudspeaker-rb
 ENV SENTRY_PROJECT=javascript-react
-ENV REACT_APP_WS_BASE_URL https://api.laudspeaker.com
-ENV REACT_APP_API_BASE_URL=https://api.laudspeaker.com
+ENV REACT_APP_WS_BASE_URL https://laudspeaker-api.ruby.ci
+ENV REACT_APP_API_BASE_URL=https://laudspeaker-api.ruby.ci
 ENV REACT_APP_ONBOARDING_API_KEY ONBOARDING-API-KEY
 ENV REACT_APP_POSTHOG_HOST https://app.posthog.com
 ENV REACT_APP_POSTHOG_KEY=""

@@ -458,17 +458,19 @@ export class MessageSender {
         break;
     }
     if (trackingEmail) {
-      this.phClient.capture({
-        distinctId: trackingEmail,
-        event: 'message_sent',
-        properties: {
-          type: 'email',
-          step: stepID,
-          customer: customerID,
-          template: templateID,
-          provider: eventProvider,
-        },
-      });
+      if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+        this.phClient.capture({
+          distinctId: trackingEmail,
+          event: 'message_sent',
+          properties: {
+            type: 'email',
+            step: stepID,
+            customer: customerID,
+            template: templateID,
+            provider: eventProvider,
+          },
+        });
+      }
     }
 
     return ret;
@@ -569,16 +571,18 @@ export class MessageSender {
       },
     ];
     if (trackingEmail) {
-      this.phClient.capture({
-        distinctId: trackingEmail,
-        event: 'message_sent',
-        properties: {
-          type: 'sms',
-          step: stepID,
-          customer: customerID,
-          template: templateID,
-        },
-      });
+      if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+        this.phClient.capture({
+          distinctId: trackingEmail,
+          event: 'message_sent',
+          properties: {
+            type: 'sms',
+            step: stepID,
+            customer: customerID,
+            template: templateID,
+          },
+        });
+      }
     }
     return ret;
   }
@@ -761,16 +765,18 @@ export class MessageSender {
         account.email
       );
       if (trackingEmail) {
-        this.phClient.capture({
-          distinctId: trackingEmail,
-          event: 'message_sent',
-          properties: {
-            type: 'firebase',
-            step: stepID,
-            customer: customerID,
-            template: templateID,
-          },
-        });
+        if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+          this.phClient.capture({
+            distinctId: trackingEmail,
+            event: 'message_sent',
+            properties: {
+              type: 'firebase',
+              step: stepID,
+              customer: customerID,
+              template: templateID,
+            },
+          });
+        }
       }
     } catch (err) {
       ret.push({
@@ -980,16 +986,18 @@ export class MessageSender {
         account.email
       );
       if (trackingEmail) {
-        this.phClient.capture({
-          distinctId: trackingEmail,
-          event: 'message_sent',
-          properties: {
-            type: 'firebase',
-            step: stepID,
-            customer: customerID,
-            template: templateID,
-          },
-        });
+        if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+          this.phClient.capture({
+            distinctId: trackingEmail,
+            event: 'message_sent',
+            properties: {
+              type: 'firebase',
+              step: stepID,
+              customer: customerID,
+              template: templateID,
+            },
+          });
+        }
       }
     } catch (err) {
       ret.push({

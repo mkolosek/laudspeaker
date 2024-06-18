@@ -6,6 +6,7 @@ import ApiService from "services/api.service";
 import { useNavigate } from "react-router-dom";
 import LockScreenAndroid from "pages/PushBuilder/Badges/LockScreenAndroid";
 import LockScreenIOS from "pages/PushBuilder/Badges/LockScreenIOS";
+import Tooltip from "components/Elements/Tooltip";
 
 const ITEMS_PER_PAGE = 5;
 
@@ -119,7 +120,16 @@ const PushViewer: FC<SidePanelComponentProps<MessageNodeData>> = ({
                     {stat.name}
                   </div>
                   <div className="font-roboto text-[24px] leading-[28px]">
-                    {stat.renderLabel(nodeData.stats?.[stat.key] || 0)}
+                    <Tooltip
+                      placement="top-start"
+                      className="bg-[#111827] rounded-none p-[5px] text-white"
+                      content={`${nodeData.stats?.[stat.key] || 0}`}
+                    >
+                      <div className="relative">
+                        <div className="w-[8px] h-[8px] bg-transparent rounded-[100%]" />
+                      </div>
+                    </Tooltip>
+                    {`${nodeData.stats?.[stat.key] || 0}`}
                   </div>
                 </div>
               ))}

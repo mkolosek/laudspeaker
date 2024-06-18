@@ -280,8 +280,10 @@ services:
       dockerfile: Dockerfile.initenv
     container_name: init-connectors
     depends_on:
-      laudspeaker-web:
-        condition: service_healthy
+      init-environment:
+        condition: service_completed_successfully
+      s3-createbuckets:
+        condition: service_completed_successfully
     networks:
       - laudspeaker_default
     command:

@@ -220,7 +220,7 @@ services:
   laudspeaker-queue:
     image: kolosek/laudspeaker
     container_name: laudspeaker-queue
-    command: "LAUDSPEAKER_PROCESS_TYPE=QUEUE npm run start:local:noprebuild -w packages/server -- --debug=9329 --watch"
+    command: "npm run start:local:noprebuild -w packages/server -- --debug=9329 --watch"
     healthcheck:
       test: '[ $(find /tmp/laudspeaker-healthcheck-queue -mmin -1 | wc -l) -eq 1 ] || false'
       interval: 10s
@@ -231,6 +231,8 @@ services:
         condition: service_completed_successfully
       s3-createbuckets:
         condition: service_completed_successfully
+    environment:
+      LAUDSPEAKER_PROCESS_TYPE: QUEUE
     env_file:
       - ./local-env/env-docker-compose
     networks:
@@ -239,7 +241,7 @@ services:
   laudspeaker-cron:
     image: kolosek/laudspeaker
     container_name: laudspeaker-cron
-    command: "LAUDSPEAKER_PROCESS_TYPE=CRON npm run start:local:noprebuild -w packages/server -- --debug=9429 --watch"
+    command: "npm run start:local:noprebuild -w packages/server -- --debug=9429 --watch"
     healthcheck:
       test: '[ $(find /tmp/laudspeaker-healthcheck-cron -mmin -1 | wc -l) -eq 1 ] || false'
       interval: 10s
@@ -250,6 +252,8 @@ services:
         condition: service_completed_successfully
       s3-createbuckets:
         condition: service_completed_successfully
+    environment:
+      LAUDSPEAKER_PROCESS_TYPE: CRON 
     env_file:
       - ./local-env/env-docker-compose
     networks:

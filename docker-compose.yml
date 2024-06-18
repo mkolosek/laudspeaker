@@ -212,6 +212,8 @@ services:
         condition: service_completed_successfully
       s3-createbuckets:
         condition: service_completed_successfully
+    environment:
+      LAUDSPEAKER_PROCESS_TYPE: WEB
     env_file:
       - ./local-env/env-docker-compose
     networks:

@@ -40,7 +40,7 @@ var requestOptions = {
   redirect: 'follow'
 };
 
-fetch("https://api.laudspeaker.com/events/", requestOptions)
+fetch("https://laudspeaker-api.ruby.ci/events/", requestOptions)
   .then(response => response.text())
   .then(result => console.log(result))
   .catch(error => console.log('error', error));`
@@ -48,7 +48,7 @@ fetch("https://api.laudspeaker.com/events/", requestOptions)
     case SnippetMode.JS_JQUERY:
       return (
         `$.ajax({
-  url: "https://api.laudspeaker.com/events/",
+  url: "https://laudspeaker-api.ruby.ci/events/",
   method: "POST",
   headers: {
     "Authorization": "Api-Key ` +
@@ -85,7 +85,7 @@ fetch("https://api.laudspeaker.com/events/", requestOptions)
       return (
         `// WARNING: For POST requests, body is set to null by browsers.
 var xhr = new XMLHttpRequest();
-xhr.open("POST", "https://api.laudspeaker.com/events/", true);
+xhr.open("POST", "https://laudspeaker-api.ruby.ci/events/", true);
 xhr.setRequestHeader("Authorization", "Api-Key ` +
         apiKey +
         `");
@@ -123,7 +123,7 @@ xhr.send(JSON.stringify({
       return (
         `const axios = require('axios');
 
-axios.post("https://api.laudspeaker.com/events/", {
+axios.post("https://laudspeaker-api.ruby.ci/events/", {
   "correlationKey": "email",
   "correlationValue": "` +
         email +
@@ -174,7 +174,7 @@ const data = JSON.stringify({
 });
 
 const options = {
-  hostname: 'api.laudspeaker.com',
+  hostname: 'laudspeaker-api.ruby.ci',
   path: '/events/',
   method: 'POST',
   headers: {
@@ -211,7 +211,7 @@ req.end();
         `const request = require('request');
 
 request({
-  url: "https://api.laudspeaker.com/events/",
+  url: "https://laudspeaker-api.ruby.ci/events/",
   method: "POST",
   headers: {
     "Authorization": "Api-Key ` +
@@ -249,7 +249,7 @@ request({
         `import http.client
 import json
 
-conn = http.client.HTTPSConnection("api.laudspeaker.com")
+conn = http.client.HTTPSConnection("laudspeaker-api.ruby.ci")
 
 headers = {
     'Authorization': 'Api-Key ` +
@@ -287,7 +287,7 @@ print(data.decode("utf-8"))
         `import requests
 import json
 
-url = "https://api.laudspeaker.com/events/"
+url = "https://laudspeaker-api.ruby.ci/events/"
 
 headers = {
     'Authorization': 'Api-Key ` +
@@ -321,7 +321,7 @@ print(response.text)
     case SnippetMode.CURL:
       return (
         `curl -X POST \
-https://api.laudspeaker.com/events/ \
+https://laudspeaker-api.ruby.ci/events/ \
 -H 'Authorization: Api-Key ` +
         apiKey +
         `' \

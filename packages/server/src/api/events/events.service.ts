@@ -1191,6 +1191,8 @@ export class EventsService {
     return Sentry.startSpan({ name: 'EventsService.batch' }, async () => {
       let err: any;
 
+      //console.log("oi", JSON.stringify(MobileBatchDto, null, 2));
+
       try {
         for (const thisEvent of MobileBatchDto.batch) {
           if (
@@ -1200,11 +1202,11 @@ export class EventsService {
             continue;
           if (thisEvent.source === 'message' && thisEvent.event === '$opened') {
             const clickHouseRecord: ClickHouseMessage = {
-              workspaceId: thisEvent.payload.workspaceID,
-              stepId: thisEvent.payload.stepID,
-              customerId: thisEvent.payload.customerID,
-              templateId: String(thisEvent.payload.templateID),
-              messageId: thisEvent.payload.messageID,
+              workspaceId: thisEvent.payload.workspaceID || thisEvent.payload.workspaceId,
+              stepId: thisEvent.payload.stepID || thisEvent.payload.stepId,
+              customerId: thisEvent.payload.customerID || thisEvent.payload.customerId,
+              templateId: String(thisEvent.payload.templateID) ||  String(thisEvent.payload.templateId),
+              messageId: thisEvent.payload.messageID || thisEvent.payload.messageId,
               event: 'opened',
               eventProvider: ClickHouseEventProvider.PUSH,
               processed: false,

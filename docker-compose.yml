@@ -30,6 +30,32 @@ services:
     networks:
       - laudspeaker_default
 
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: pgbouncer
+    hostname: pgbouncer
+    environment:
+      - LISTEN_PORT=6432
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${POSTGRES_USER:-postgres}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - DB_NAME=laudspeaker
+      - AUTH_TYPE=scram-sha-256
+      - POOL_MODE=transaction
+      - MAX_DB_CONNECTIONS=100
+      - MAX_CLIENT_CONN=1000
+      - MIN_POOL_SIZE=5
+      - DEFAULT_POOL_SIZE=100
+      - RESERVE_POOL_SIZE=0
+      - IGNORE_STARTUP_PARAMETERS=lock_timeout,statement_timeout,idle_in_transaction_session_timeout
+    ports:
+      - "6432:6432"
+    depends_on:
+      - postgres
+    networks:
+      - laudspeaker_default
+
   mongo:
     image: "mongo:latest"
     hostname: mongo

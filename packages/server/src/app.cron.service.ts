@@ -618,26 +618,6 @@ export class CronService {
     });
   }
 
-  @Cron(CronExpression.EVERY_MINUTE)
-  printTimeoutLength() {
-    const session = randomUUID();
-    this.log(
-      `os.cpus().length: ${os.cpus().length}`,
-      this.printTimeoutLength.name,
-      session
-    );
-    this.log(
-      `DATABASE_MAX_CONNECTIONS: ${process.env.DATABASE_MAX_CONNECTIONS}`,
-      this.printTimeoutLength.name,
-      session
-    );
-    this.log(
-      `DEPLOY_MAX_REPLICAS: ${process.env.DEPLOY_MAX_REPLICAS}`,
-      this.printTimeoutLength.name,
-      session
-    );
-  }
-
   @Cron(CronExpression.EVERY_HOUR)
   async handleEventKeysCron() {
     return Sentry.startSpan(

@@ -52,10 +52,8 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       autoLoadEntities: true,
       maxQueryExecutionTime: 2000,
       extra: {
-        max: maxDBConnectionsPerReplicaProcess,
-        idleTimeoutMillis : 30000,
         options:
-          '-c lock_timeout=240000ms -c statement_timeout=900000ms -c idle_in_transaction_session_timeout=240000ms',
+          '-c lock_timeout=240000ms -c statement_timeout=240000ms -c idle_in_transaction_session_timeout=240000ms',
       },
       // migrationsRun: true,
     };

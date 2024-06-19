@@ -415,7 +415,7 @@ export class CustomersService {
       },
     });
 
-    if (organization.plan.customerLimit != -1) {
+    if (process.env.NODE_ENV !== "development" && organization.plan.customerLimit != -1) {
       if (
         customersInOrganization + customersToAdd >
         organization.plan.customerLimit
@@ -6343,20 +6343,25 @@ export class CustomersService {
       const promisesList = [];
 
       const readPromise = new Promise<{
+        total: number;
         created: number;
         updated: number;
         skipped: number;
+        final: number;
       }>(async (resolve, reject) => {
         const s3CSVStream = await this.s3Service.getImportedCSVReadStream(
           fileData.fileKey
         );
+        let total = 0;
         let created = 0;
         let updated = 0;
         let skipped = 0;
+        let final = 0;
 
         const csvStream = fastcsv
           .parse({ headers: true })
           .on('data', async (data) => {
+            total++;
             let skippedReason = '';
             let convertedPKValue;
 
@@ -6388,54 +6393,56 @@ export class CustomersService {
               );
               return;
             } else {
-              currentBatch.push(convertedPKValue);
+              // currentBatch.push(convertedPKValue);
 
-              if (currentBatch.length >= 10000) {
-                promisesList.push(
-                  (async () => {
-                    const { createdCount, updatedCount } =
-                      await this.countCreateUpdateWithBatch(
-                        passedPK.asAttribute.key,
-                        Array.from(currentBatch)
-                      );
-                    created += createdCount;
-                    updated += updatedCount;
-                  })()
-                );
-                currentBatch = [];
-              }
+              // if (currentBatch.length >= 10000) {
+              //   promisesList.push(
+              //     (async () => {
+              //       const { createdCount, updatedCount } =
+              //         await this.countCreateUpdateWithBatch(
+              //           passedPK.asAttribute.key,
+              //           Array.from(currentBatch)
+              //         );
+              //       created += createdCount;
+              //       updated += updatedCount;
+              //     })()
+              //   );
+              //   currentBatch = [];
+              // }
             }
           })
           .on('end', async () => {
-            if (currentBatch.length > 0) {
-              promisesList.push(
-                (async () => {
-                  const { createdCount, updatedCount } =
-                    await this.countCreateUpdateWithBatch(
-                      passedPK.asAttribute.key,
-                      Array.from(currentBatch)
-                    );
-                  created += createdCount;
-                  updated += updatedCount;
-                })()
-              );
-              currentBatch = [];
-            }
+            // if (currentBatch.length > 0) {
+            //   promisesList.push(
+            //     (async () => {
+            //       const { createdCount, updatedCount } =
+            //         await this.countCreateUpdateWithBatch(
+            //           passedPK.asAttribute.key,
+            //           Array.from(currentBatch)
+            //         );
+            //       created += createdCount;
+            //       updated += updatedCount;
+            //     })()
+            //   );
+            //   currentBatch = [];
+            // }
 
-            await Promise.all(promisesList);
+            // await Promise.all(promisesList);
 
             writeErrorsStream.end();
             await new Promise((resolve2) =>
               writeErrorsStream.on('finish', resolve2)
             );
 
-            resolve({ created, updated, skipped });
+            resolve({ total, created, updated, skipped, final });
           });
 
         s3CSVStream.pipe(csvStream);
       });
 
       const countResults = await readPromise;
+
+      countResults.final = countResults.total - countResults.skipped;
 
       let uploadResult = '';
       if (countResults.skipped > 0) {

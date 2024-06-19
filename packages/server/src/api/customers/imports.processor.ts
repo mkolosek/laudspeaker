@@ -201,7 +201,7 @@ export class ImportProcessor extends WorkerHost {
                 .finally(() => {
                   promiseSet.delete(batchId);
                 });
-              await new Promise((resolve) => setTimeout(resolve, 10000));
+
               batch = [];
               csvStream.resume();
             }

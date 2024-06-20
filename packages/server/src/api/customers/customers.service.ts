@@ -1681,6 +1681,8 @@ export class CustomersService {
             this.findOrCreateCustomerBySearchOptions.name,
             session
           );
+
+          throw error;
         }
       }
     }
@@ -1694,7 +1696,7 @@ export class CustomersService {
       const deviceTokenSetAtField = iosDeviceToken
         ? 'iosDeviceTokenSetAt'
         : 'androidDeviceTokenSetAt';
-      if (result.customer[deviceTokenField] !== deviceTokenValue)
+      if (result.customer && result.customer[deviceTokenField] !== deviceTokenValue)
 
         result.customer = await this.CustomerModel.findOneAndUpdate(
           { _id: result.customer._id, workspaceId },

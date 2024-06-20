@@ -241,20 +241,23 @@ export class ImportProcessor extends WorkerHost {
                 return;
               }
             };
-            await checkAllBatchesCompleted();
+            interval = setInterval(checkAllBatchesCompleted, 200);
 
-            setInterval(checkAllBatchesCompleted, 200);
             setTimeout(() => {
               if (interval) clearInterval(interval);
               reject('Timeout while waiting for all batches to complete');
-            }, 5000);
+            }, 30000);
           })
           .on('error', (err) => {
             reject(err);
           });
         s3CSVStream.pipe(csvStream);
       });
-      await readPromise;
+
+      await readPromise.catch((error) => {
+        throw new Error(error);
+      });
+
       await this.customersService.removeImportFile(account);
 
       if (segmentId) {
@@ -263,6 +266,13 @@ export class ImportProcessor extends WorkerHost {
           isUpdating: false,
         });
       }
+
+      this.warn(
+        `Import complete.`,
+        this.process.name,
+        session
+      );
+
     } catch (error) {
       this.error(error, 'Processing customer import', session);
       throw error;

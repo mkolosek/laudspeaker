@@ -28,7 +28,9 @@ import { Temporal } from '@js-temporal/polyfill';
     ? +process.env.WAIT_UNTIL_STEP_PROCESSOR_STALLED_INTERVAL
     : 600000,
   removeOnComplete: {
-    age: 0,
+    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      : 0,
     count: process.env.WAIT_UNTIL_STEP_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.WAIT_UNTIL_STEP_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,

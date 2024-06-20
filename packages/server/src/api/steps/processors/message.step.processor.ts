@@ -46,7 +46,9 @@ import { OrganizationService } from '@/api/organizations/organizations.service';
     ? +process.env.MESSAGE_STEP_PROCESSOR_STALLED_INTERVAL
     : 600000,
   removeOnComplete: {
-    age: 0,
+    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      : 0,
     count: process.env.MESSAGE_STEP_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.MESSAGE_STEP_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,

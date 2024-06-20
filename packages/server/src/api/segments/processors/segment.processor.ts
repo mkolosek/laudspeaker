@@ -30,7 +30,9 @@ import { SegmentCustomersService } from '../segment-customers.service';
     ? +process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
     : 600000,
   removeOnComplete: {
-    age: 0,
+    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      : 0,
     count: process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,

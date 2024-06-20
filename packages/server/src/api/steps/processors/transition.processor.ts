@@ -74,7 +74,9 @@ import { CacheService } from '@/common/services/cache.service';
     ? +process.env.TRANSITION_PROCESSOR_STALLED_INTERVAL
     : 600000,
   removeOnComplete: {
-    age: 0,
+    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      : 0,
     count: process.env.TRANSITION_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.TRANSITION_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,

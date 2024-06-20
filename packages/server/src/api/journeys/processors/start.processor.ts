@@ -29,7 +29,9 @@ const BATCH_SIZE = +process.env.START_BATCH_SIZE;
     ? +process.env.START_PROCESSOR_STALLED_INTERVAL
     : 600000,
   removeOnComplete: {
-    age: 0,
+    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      : 0,
     count: process.env.START_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.START_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,

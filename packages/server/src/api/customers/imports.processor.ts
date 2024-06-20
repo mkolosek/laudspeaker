@@ -23,7 +23,9 @@ import { randomUUID } from 'crypto';
     ? +process.env.IMPORTS_PROCESSOR_STALLED_INTERVAL
     : 30000,
   removeOnComplete: {
-    age: 0,
+    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      : 0,
     count: process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,

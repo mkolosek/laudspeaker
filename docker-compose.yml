@@ -198,7 +198,7 @@ services:
       s3-createbuckets:
         condition: service_completed_successfully
     env_file:
-      - ./local-env/env-docker-compose
+      - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
 
@@ -215,7 +215,7 @@ services:
     environment:
       LAUDSPEAKER_PROCESS_TYPE: WEB
     env_file:
-      - ./local-env/env-docker-compose
+      - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
 
@@ -235,7 +235,7 @@ services:
     environment:
       LAUDSPEAKER_PROCESS_TYPE: QUEUE
     env_file:
-      - ./local-env/env-docker-compose
+      - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
 
@@ -255,7 +255,7 @@ services:
     environment:
       LAUDSPEAKER_PROCESS_TYPE: CRON 
     env_file:
-      - ./local-env/env-docker-compose
+      - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
 
@@ -272,7 +272,7 @@ services:
       exit 0;
       "
     env_file:
-      - ./local-env/env-docker-compose
+      - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
 

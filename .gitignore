@@ -174,3 +174,4 @@ test-firebase-credentials.json
 # grabage
 .DS_Store
 ormlogs.log
+/local-env/env-docker-compose.prod

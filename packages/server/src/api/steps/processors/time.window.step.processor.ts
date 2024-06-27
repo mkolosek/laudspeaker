@@ -26,6 +26,7 @@ import { Journey } from '@/api/journeys/entities/journey.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
 import { Temporal } from '@js-temporal/polyfill';
+import { QueueService } from '@/common/services/queue.service';
 
 @Injectable()
 @Processor('{time.window.step}', {
@@ -51,25 +52,12 @@ export class TimeWindowStepProcessor extends WorkerHost {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start.step}') private readonly startStepQueue: Queue,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
-    @InjectQueue('{message.step}') private readonly messageStepQueue: Queue,
-    @InjectQueue('{jump.to.step}') private readonly jumpToStepQueue: Queue,
-    @InjectQueue('{time.delay.step}')
-    private readonly timeDelayStepQueue: Queue,
-    @InjectQueue('{time.window.step}')
-    private readonly timeWindowStepQueue: Queue,
-    @InjectQueue('{multisplit.step}')
-    private readonly multisplitStepQueue: Queue,
-    @InjectQueue('{experiment.step}')
-    private readonly experimentStepQueue: Queue,
-    @InjectQueue('{exit.step}') private readonly exitStepQueue: Queue,
     @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
     @Inject(StepsService) private stepsService: StepsService,
-    @Inject(CacheService) private cacheService: CacheService
+    @Inject(CacheService) private cacheService: CacheService,
+    @Inject(QueueService) private queueService: QueueService,
   ) {
     super();
   }
@@ -133,57 +121,6 @@ export class TimeWindowStepProcessor extends WorkerHost {
     );
   }
 
-  private processorMap: Record<
-    StepType,
-    (type: StepType, job: any) => Promise<void>
-  > = {
-    [StepType.START]: async (type, job) => {
-      await this.startStepQueue.add(type, job);
-    },
-    [StepType.EXPERIMENT]: async (type, job) => {
-      await this.experimentStepQueue.add(type, job);
-    },
-    [StepType.LOOP]: async (type, job) => {
-      await this.jumpToStepQueue.add(type, job);
-    },
-    [StepType.EXIT]: async (type, job) => {
-      await this.exitStepQueue.add(type, job);
-    },
-    [StepType.MULTISPLIT]: async (type, job) => {
-      await this.multisplitStepQueue.add(type, job);
-    },
-    [StepType.MESSAGE]: async (type: StepType, job: any) => {
-      await this.messageStepQueue.add(type, job);
-    },
-    [StepType.TIME_WINDOW]: async (type: StepType, job: any) => {
-      await this.timeWindowStepQueue.add(type, job);
-    },
-    [StepType.TIME_DELAY]: async (type: StepType, job: any) => {
-      await this.timeDelayStepQueue.add(type, job);
-    },
-    [StepType.WAIT_UNTIL_BRANCH]: async (type: StepType, job: any) => {
-      await this.waitUntilStepQueue.add(type, job);
-    },
-    [StepType.AB_TEST]: function (type: StepType, job: any): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.RANDOM_COHORT_BRANCH]: function (
-      type: StepType,
-      job: any
-    ): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.TRACKER]: function (type: StepType, job: any): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.ATTRIBUTE_BRANCH]: function (
-      type: StepType,
-      job: any
-    ): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-  };
-
   async process(
     job: Job<
       {
@@ -195,6 +132,7 @@ export class TimeWindowStepProcessor extends WorkerHost {
         session: string;
         event?: string;
         branch?: number;
+        stepDepth: number;
       },
       any,
       string
@@ -264,6 +202,8 @@ export class TimeWindowStepProcessor extends WorkerHost {
           );
 
           if (nextStep) {
+            const nextStepDepth: number = this.queueService.getNextStepDepthFromJob(job);
+
             if (
               nextStep.type !== StepType.TIME_DELAY &&
               nextStep.type !== StepType.TIME_WINDOW &&
@@ -277,6 +217,7 @@ export class TimeWindowStepProcessor extends WorkerHost {
                 customer: job.data.customer,
                 location: job.data.location,
                 event: job.data.event,
+                stepDepth: nextStepDepth
               };
             } else {
               // Destination is time based,
@@ -303,7 +244,7 @@ export class TimeWindowStepProcessor extends WorkerHost {
           );
         }
         if (nextStep && nextJob)
-          await this.processorMap[nextStep.type](nextStep.type, nextJob);
+          await this.queueService.add(nextStep.type, nextJob);
       }
     );
   }

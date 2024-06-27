@@ -62,6 +62,7 @@ import { OrganizationInvites } from './api/organizations/entities/organization-i
 import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HealthCheckService } from './app.healthcheck.service';
+import { QueueService } from '@/common/services/queue.service';
 
 const sensitiveKeys = [
   /cookie/i,
@@ -102,6 +103,7 @@ function getProvidersList() {
     RedlockService,
     JourneyLocationsService,
     HealthCheckService,
+    QueueService
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'CRON') {
@@ -268,13 +270,31 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       name: '{start}',
     }),
     BullModule.registerQueue({
+      name: '{start.step}',
+    }),
+    BullModule.registerQueue({
       name: '{wait.until.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{message.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{jump.to.step}',
     }),
     BullModule.registerQueue({
       name: '{time.delay.step}',
     }),
     BullModule.registerQueue({
       name: '{time.window.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{multisplit.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{experiment.step}',
+    }),
+    BullModule.registerQueue({
+      name: '{exit.step}',
     }),
     BullModule.registerQueue({
       name: '{customer_change}',

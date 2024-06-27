@@ -157,7 +157,7 @@ export class StepsService {
     client?: any,
     session?: string,
     collectionName?: string
-  ): Promise<{ collectionName: string; job: { name: string; data: any } }> {
+  ): Promise<{ collectionName: string; jobData: any }> {
     return Sentry.startSpan({ name: 'StepsService.triggerStart' }, async () => {
       const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
@@ -207,18 +207,15 @@ export class StepsService {
 
       return {
         collectionName,
-        job: {
-          name: 'start',
-          data: {
-            owner: account,
-            step: startStep[0],
-            journey,
-            session: session,
-            query,
-            skip: 0,
-            limit: audienceSize,
-            collectionName,
-          },
+        jobData: {
+          owner: account,
+          step: startStep[0],
+          journey,
+          session: session,
+          query,
+          skip: 0,
+          limit: audienceSize,
+          collectionName,
         },
       };
     });

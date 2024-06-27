@@ -18,6 +18,7 @@ import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
 import { CustomersService } from '@/api/customers/customers.service';
 import { JourneysService } from '@/api/journeys/journeys.service';
+import { QueueService } from '@/common/services/queue.service';
 
 @Injectable()
 @Processor('{enrollment}', {
@@ -37,7 +38,8 @@ export class EnrollmentProcessor extends WorkerHost {
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
     @Inject(JourneysService)
-    private journeyService: JourneysService
+    private journeyService: JourneysService,
+    @Inject(QueueService) private queueService: QueueService,
   ) {
     super();
   }
@@ -119,7 +121,7 @@ export class EnrollmentProcessor extends WorkerHost {
     let err: any;
     let triggerStartTasks: {
       collectionName: string;
-      job: { name: string; data: any };
+      jobData: any
     };
     let collectionName: string;
     let count: number;
@@ -172,10 +174,12 @@ export class EnrollmentProcessor extends WorkerHost {
       });
 
       await queryRunner.commitTransaction();
+
       if (triggerStartTasks) {
-        await this.startQueue.add(
-          triggerStartTasks.job.name,
-          triggerStartTasks.job.data
+        await this.queueService.addToQueue(
+          this.startQueue,
+          'start',
+          triggerStartTasks.jobData
         );
       }
     } catch (e) {

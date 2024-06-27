@@ -756,8 +756,8 @@ export class JourneysService {
     session: string,
     queryRunner: QueryRunner,
     clientSession?: ClientSession
-  ): Promise<{ name: string; data: any }[]> {
-    const jobs: { name: string; data: any }[] = [];
+  ): Promise<any[]> {
+    const jobsData: any[] = [];
     const step = await this.stepsService.findByJourneyAndType(
       account,
       journey.id,
@@ -778,20 +778,21 @@ export class JourneysService {
       }
     };
     // Prepare a deep copy of the account to modify without affecting the original account object
-  const modifiedAccount = {
-    ...account,
-    teams: account.teams.map(team => ({
-      ...team,
-      organization: {
-        ...team.organization,
-        workspaces: team.organization.workspaces.map(workspace => ({
-          ...workspace,
-          pushConnections: [] //, Clears the pushConnections array
-          //pushPlatforms: null // Clears the pushPlatforms info
-        }))
-      }
-    }))
-  };
+    const modifiedAccount = {
+      ...account,
+      teams: account.teams.map(team => ({
+        ...team,
+        organization: {
+          ...team.organization,
+          workspaces: team.organization.workspaces.map(workspace => ({
+            ...workspace,
+            pushConnections: [] //, Clears the pushConnections array
+            //pushPlatforms: null // Clears the pushPlatforms info
+          }))
+        }
+      }))
+    };
+
     for (const customer of customers) {
       if (
         await this.rateLimitEntryByUniqueEnrolledCustomers(
@@ -808,25 +809,23 @@ export class JourneysService {
         );
         continue;
       }
-      const job = {
-        name: 'start',
-        data: {
-          owner: modifiedAccount,
-          journey: modifiedJourney,
-          step: step,
-          location: locations.find((location: JourneyLocation) => {
-            return (
-              location.customer === (customer._id ?? customer._id.toString()) &&
-              location.journey === journey.id
-            );
-          }),
-          session: session,
-          customer, //customer.id ?? customer._id.toString(),
-        },
+      const jobData = {
+        owner: modifiedAccount,
+        journey: modifiedJourney,
+        step: step,
+        location: locations.find((location: JourneyLocation) => {
+          return (
+            location.customer === (customer._id ?? customer._id.toString()) &&
+            location.journey === journey.id
+          );
+        }),
+        session: session,
+        customer, //customer.id ?? customer._id.toString(),
+        stepDepth: 1,
       };
-      jobs.push(job);
+      jobsData.push(jobData);
     }
-    return jobs;
+    return jobsData;
   }
 
   /**

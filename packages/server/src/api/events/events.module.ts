@@ -60,6 +60,7 @@ import { StartStepProcessor } from '../steps/processors/start.step.processor';
 import { TimeDelayStepProcessor } from '../steps/processors/time.delay.step.processor';
 import { TimeWindowStepProcessor } from '../steps/processors/time.window.step.processor';
 import { OrganizationsModule } from '../organizations/organizations.module';
+import { QueueService } from '@/common/services/queue.service';
 
 function getProvidersList() {
   let providerList: Array<any> = [
@@ -70,6 +71,7 @@ function getProvidersList() {
     CustomersService,
     S3Service,
     CacheService,
+    QueueService
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {

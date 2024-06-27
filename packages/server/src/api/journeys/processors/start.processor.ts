@@ -20,6 +20,9 @@ import { Journey } from '../entities/journey.entity';
 import { JourneyLocationsService } from '../journey-locations.service';
 import { JourneysService } from '../journeys.service';
 import { Step } from '../../steps/entities/step.entity';
+import { StepType } from '../../steps/types/step.interface';
+import { StepsService } from '../../steps/steps.service';
+import { QueueService } from '@/common/services/queue.service';
 
 const BATCH_SIZE = +process.env.START_BATCH_SIZE;
 
@@ -48,7 +51,6 @@ export class StartProcessor extends WorkerHost {
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start.step}') private readonly startStepQueue: Queue,
     @InjectQueue('{start}') private readonly startQueue: Queue,
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(CustomersService)
@@ -56,7 +58,9 @@ export class StartProcessor extends WorkerHost {
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(JourneysService)
-    private readonly journeysService: JourneysService
+    private readonly journeysService: JourneysService,
+    @Inject(StepsService) private stepsService: StepsService,
+    @Inject(QueueService) private queueService: QueueService,
   ) {
     super();
   }
@@ -181,7 +185,7 @@ export class StartProcessor extends WorkerHost {
           }),
           queryRunner
         );
-        const jobs = await this.journeysService.enrollCustomersInJourney(
+        const jobsData = await this.journeysService.enrollCustomersInJourney(
           job.data.owner,
           job.data.journey,
           customers,
@@ -191,7 +195,8 @@ export class StartProcessor extends WorkerHost {
           null
         );
         await queryRunner.commitTransaction();
-        if (jobs && jobs.length) await this.startStepQueue.addBulk(jobs);
+        if (jobsData && jobsData.length)
+          await this.queueService.addBulk(StepType.START, jobsData);
       } catch (e) {
         this.error(e, this.process.name, job.data.session, job.data.owner.id);
         await queryRunner.rollbackTransaction();
@@ -203,34 +208,31 @@ export class StartProcessor extends WorkerHost {
     }
     //otherwise, split query in half and add both halves to the start queue
     else {
-      await this.startQueue.addBulk([
-        {
-          name: 'start',
-          data: {
-            owner: job.data.owner,
-            journey: job.data.journey,
-            step: job.data.step,
-            session: job.data.session,
-            query: job.data.query,
-            skip: job.data.skip,
-            limit: Math.floor(job.data.limit / 2),
-            collectionName: job.data.collectionName,
-          },
-        },
-        {
-          name: 'start',
-          data: {
-            owner: job.data.owner,
-            journey: job.data.journey,
-            step: job.data.step,
-            session: job.data.session,
-            query: job.data.query,
-            skip: job.data.skip + Math.floor(job.data.limit / 2),
-            limit: Math.ceil(job.data.limit / 2),
-            collectionName: job.data.collectionName,
-          },
-        },
-      ]);
+      const jobsData = [{
+        owner: job.data.owner,
+        journey: job.data.journey,
+        step: job.data.step,
+        session: job.data.session,
+        query: job.data.query,
+        skip: job.data.skip,
+        limit: Math.floor(job.data.limit / 2),
+        collectionName: job.data.collectionName,
+      }, {
+        owner: job.data.owner,
+        journey: job.data.journey,
+        step: job.data.step,
+        session: job.data.session,
+        query: job.data.query,
+        skip: job.data.skip + Math.floor(job.data.limit / 2),
+        limit: Math.ceil(job.data.limit / 2),
+        collectionName: job.data.collectionName,
+      }];
+
+      await this.queueService.addBulkToQueue(
+        this.startQueue,
+        'start',
+        jobsData
+      );
     }
   }
 

@@ -68,6 +68,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Account } from './api/accounts/entities/accounts.entity';
 import * as os from 'os';
 import * as Sentry from '@sentry/node';
+import { QueueService } from '@/common/services/queue.service';
 
 const BATCH_SIZE = 500;
 
@@ -121,15 +122,12 @@ export class CronService {
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
-    @InjectQueue('{time.delay.step}') private readonly timeDelayStep: Queue,
-    @InjectQueue('{time.window.step}') private readonly timeWindowStep: Queue,
     @InjectQueue('{transition}') private readonly transitionQueue: Queue,
     @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(RedlockService)
     private readonly redlockService: RedlockService,
-    @InjectConnection() private readonly connection: mongoose.Connection
+    @InjectConnection() private readonly connection: mongoose.Connection,
+    @Inject(QueueService) private queueService: QueueService,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -474,7 +472,10 @@ export class CronService {
                     .exec(),
                   location: locations[locationsIndex],
                   branch,
+                  // TODO: extrapolate stepDepth from journey
+                  stepDepth: 1,
                 },
+                // These opts will be ignored
                 opts: {
                   jobId: generateUniqueJobId({
                     step: step,
@@ -508,21 +509,22 @@ export class CronService {
         await queryRunner.release();
       }
       if (!timeBasedErr) {
-        await this.waitUntilStepQueue.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.WAIT_UNTIL_BRANCH);
-          })
-        );
-        await this.timeDelayStep.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.TIME_DELAY);
-          })
-        );
-        await this.timeWindowStep.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.TIME_WINDOW);
-          })
-        );
+        const jobDataFilter = (type, jobs): any[] => {
+          let filteredJobs = jobs.filter((job) => {
+            return job.name === String(type);
+          });
+
+          filteredJobs = filteredJobs.map((job) => job.data);
+
+          return filteredJobs;
+        }
+        const waitUntilJobsData = jobDataFilter(StepType.WAIT_UNTIL_BRANCH, timeBasedJobs);
+        const timeDelayJobsData = jobDataFilter(StepType.TIME_DELAY, timeBasedJobs);
+        const timeWindowJobsData = jobDataFilter(StepType.TIME_WINDOW, timeBasedJobs);
+
+        await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, waitUntilJobsData);
+        await this.queueService.addBulk(StepType.TIME_DELAY, timeDelayJobsData);
+        await this.queueService.addBulk(StepType.TIME_WINDOW, timeWindowJobsData);
       }
 
       // Handle expiry of recovery emails
@@ -1468,10 +1470,11 @@ export class CronService {
           // for (const collection of collectionNames) {
           //   await this.connection.dropCollection(collection);
           // }
-          if (triggerStartTasks?.job)
-            await this.startQueue.add(
-              triggerStartTasks.job.name,
-              triggerStartTasks.job.data
+          if (triggerStartTasks?.jobData)
+            await this.queueService.addToQueue(
+              this.startQueue,
+              'start',
+              triggerStartTasks.jobData
             );
         } catch (e) {
           this.error(e, this.handleEntryTiming.name, session);

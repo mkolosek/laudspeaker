@@ -8,7 +8,7 @@ import { StepType } from '../../api/steps/types/step.interface';
 @Injectable()
 export class QueueService {
   constructor(
-    @InjectQueue('{start.step}') 
+    @InjectQueue('{start.step}')
     private readonly startStepQueue: Queue,
     @InjectQueue('{wait.until.step}')
     private readonly waitUntilStepQueue: Queue,
@@ -39,7 +39,7 @@ export class QueueService {
       [StepType.TIME_WINDOW]: this.timeWindowStepQueue,
       [StepType.TIME_DELAY]: this.timeDelayStepQueue,
       [StepType.WAIT_UNTIL_BRANCH]: this.waitUntilStepQueue,
-    }
+    };
 
     return queueMap;
   }
@@ -49,7 +49,7 @@ export class QueueService {
 
     const queue = queueMap[type];
 
-    if(!queue) {
+    if (!queue) {
       throw new Error('Function ${type} is not implemented.');
     }
 
@@ -64,16 +64,13 @@ export class QueueService {
       // handle job and jobData
       stepDepth = job.stepDepth;
 
-      if(!stepDepth)
-        stepDepth = job.data?.stepDepth;
+      if (!stepDepth) stepDepth = job.data?.stepDepth;
 
-      if (stepDepth)
-        allStepDepths.add(+stepDepth);
+      if (stepDepth) allStepDepths.add(+stepDepth);
     }
 
     // default to stepDepth of 1
-    if(allStepDepths.size == 0)
-      return 1;
+    if (allStepDepths.size == 0) return 1;
 
     // get first value
     let it = allStepDepths.values();
@@ -101,10 +98,7 @@ export class QueueService {
    * @param batchSize
    * @returns
    */
-  private getBulkJobPriority(
-    stepDepth: number,
-    batchSize: number
-  ): number[] {
+  private getBulkJobPriority(stepDepth: number, batchSize: number): number[] {
     const priorities: number[] = [];
 
     // bullmq min, max priority
@@ -118,10 +112,14 @@ export class QueueService {
     stepDepth = Math.min(stepDepth, maxJourneyDepth);
 
     // priorities will be [1, stepPriorityBlocks[, [stepPriorityBlocks, 2 * stepPriorityBlocks[, etc...
-    const stepPriorityBlocks: number = Math.floor(maxJobPriority / maxJourneyDepth);
+    const stepPriorityBlocks: number = Math.floor(
+      maxJobPriority / maxJourneyDepth
+    );
 
-    let nextStepPriorityStart: number = (stepDepth - 1) * stepPriorityBlocks + 1;
-    let nextStepPriorityEnd: number = nextStepPriorityStart + stepPriorityBlocks - 1;
+    let nextStepPriorityStart: number =
+      (stepDepth - 1) * stepPriorityBlocks + 1;
+    let nextStepPriorityEnd: number =
+      nextStepPriorityStart + stepPriorityBlocks - 1;
 
     // ensure start and end are within bounds
     nextStepPriorityStart = Math.max(nextStepPriorityStart, minJobPriority);
@@ -130,8 +128,11 @@ export class QueueService {
     let nextStepPriority;
 
     // get a random number between nextStepPriorityStart and nextStepPriorityEnd inclusive
-    for(let i = 0; i < batchSize; i++) {
-      nextStepPriority = Math.floor(Math.random() * (nextStepPriorityEnd - nextStepPriorityStart + 1) + nextStepPriorityStart);
+    for (let i = 0; i < batchSize; i++) {
+      nextStepPriority = Math.floor(
+        Math.random() * (nextStepPriorityEnd - nextStepPriorityStart + 1) +
+          nextStepPriorityStart
+      );
 
       priorities.push(nextStepPriority);
     }
@@ -162,19 +163,19 @@ export class QueueService {
     const stepDepth = this.getStepDepthFromBulkJob(jobsData);
     const priorities = this.getBulkJobPriority(stepDepth, jobsData.length);
     const jobs: {
-      name: string,
-      data: any,
-      opts: any,
+      name: string;
+      data: any;
+      opts: any;
     }[] = [];
 
-    for(let i = 0; i < jobsData.length; i++) {
+    for (let i = 0; i < jobsData.length; i++) {
       jobs.push({
         name: name,
         data: jobsData[i],
         opts: {
           priority: priorities[i],
-        }
-      })
+        },
+      });
     }
 
     await queue.addBulk(jobs);

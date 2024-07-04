@@ -267,12 +267,7 @@ export class ImportProcessor extends WorkerHost {
         });
       }
 
-      this.warn(
-        `Import complete.`,
-        this.process.name,
-        session
-      );
-
+      this.warn(`Import complete.`, this.process.name, session);
     } catch (error) {
       this.error(error, 'Processing customer import', session);
       throw error;
@@ -443,8 +438,9 @@ export class ImportProcessor extends WorkerHost {
 
       if (!segment) {
         this.error(
-          `Segment ${segmentId} doesn't exist in database`,
-          'Processing customer import -> moving to segment',
+          `Segment ${segmentId} doesn't exist in database,
+           Processing customer import -> moving to segment`,
+          this.processImportRecord.name,
           session
         );
         return;
@@ -453,7 +449,7 @@ export class ImportProcessor extends WorkerHost {
       await this.segmentCustomersRepository.insert(
         addToSegment.map((el) => ({
           customerId: el,
-          segment: segmentId, //segment,
+          segment: segment,
           workspace: workspace,
         }))
       );

@@ -113,7 +113,7 @@ export class SegmentCustomersService {
       // Step 1: Check if customer is already enrolled in Journey; if so, throw error
       const location = await queryRunner.manager.findOne(SegmentCustomers, {
         where: {
-          segment: segment.id,
+          segment: { id: segment.id },
           workspace: { id: workspace.id },
           customerId: customer._id,
         },
@@ -126,7 +126,7 @@ export class SegmentCustomersService {
 
       // Step 2: Create new journey Location row, add time that user entered the journey
       await queryRunner.manager.save(SegmentCustomers, {
-        segment: segment.id,
+        segment: { id: segment.id },
         workspace,
         customerId: customer._id,
         segmentEntry: Date.now(),
@@ -134,7 +134,7 @@ export class SegmentCustomersService {
     } else {
       const location = await this.segmentCustomersRepository.findOne({
         where: {
-          segment: segment.id,
+          segment: { id: segment.id },
           workspace: { id: workspace.id },
           customerId: customer._id,
         },
@@ -144,7 +144,7 @@ export class SegmentCustomersService {
           `Customer ${customer._id} already a part of segment ${segment.id}`
         );
       await this.segmentCustomersRepository.save({
-        segment: segment.id,
+        segment: { id: segment.id },
         workspace,
         customerId: customer._id,
         segmentEntry: Date.now(),
@@ -174,7 +174,7 @@ export class SegmentCustomersService {
       // Step 1: Check if customer is already enrolled in Journey; if so, throw error
       const location = await queryRunner.manager.findOne(SegmentCustomers, {
         where: {
-          segment: segment.id,
+          segment: { id: segment.id },
           workspace: { id: workspace.id },
           customerId: customer._id,
         },
@@ -187,7 +187,7 @@ export class SegmentCustomersService {
 
       // Step 2: Create new journey Location row, add time that user entered the journey
       await queryRunner.manager.save(SegmentCustomers, {
-        segment: segment.id,
+        segment: { id: segment.id },
         workspace,
         customerId: customer._id,
         segmentEntry: Date.now(),
@@ -195,7 +195,7 @@ export class SegmentCustomersService {
     } else {
       const location = await this.segmentCustomersRepository.findOne({
         where: {
-          segment: segment.id,
+          segment: { id: segment.id },
           workspace: { id: workspace.id },
           customerId: customer._id,
         },
@@ -205,7 +205,7 @@ export class SegmentCustomersService {
           `Customer ${customer._id} already a part of segment ${segment.id}`
         );
       await this.segmentCustomersRepository.save({
-        segment: segment.id,
+        segment: { id: segment.id },
         workspace,
         customerId: customer._id,
         segmentEntry: Date.now(),
@@ -235,7 +235,7 @@ export class SegmentCustomersService {
       // Step 1: Check if customer is already enrolled in Journey; if so, throw error
       const location = await queryRunner.manager.findOne(SegmentCustomers, {
         where: {
-          segment: segment.id,
+          segment: { id: segment.id },
           workspace: { id: workspace.id },
           customerId: customer._id,
         },
@@ -248,7 +248,7 @@ export class SegmentCustomersService {
 
       // Step 2: Create new journey Location row, add time that user entered the journey
       await queryRunner.manager.save(SegmentCustomers, {
-        segment: segment.id,
+        segment: { id: segment.id },
         workspace,
         customerId: customer._id,
         segmentEntry: Date.now(),
@@ -256,7 +256,7 @@ export class SegmentCustomersService {
     } else {
       const location = await this.segmentCustomersRepository.findOne({
         where: {
-          segment: segment.id,
+          segment: { id: segment.id },
           workspace: { id: workspace.id },
           customerId: customer._id,
         },
@@ -266,7 +266,7 @@ export class SegmentCustomersService {
           `Customer ${customer._id} already a part of segment ${segment.id}`
         );
       await this.segmentCustomersRepository.save({
-        segment: segment.id,
+        segment: { id: segment.id },
         workspace,
         customerId: customer._id,
         segmentEntry: Date.now(),
@@ -384,7 +384,7 @@ export class SegmentCustomersService {
     const queryCriteria: FindManyOptions<SegmentCustomers> = {
       where: {
         workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        segment: segment.id,
+        segment: { id: segment.id },
       },
     };
     let count: number;
@@ -412,7 +412,7 @@ export class SegmentCustomersService {
     const queryCriteria: FindManyOptions<SegmentCustomers> = {
       where: {
         workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        segment: segment.id,
+        segment: { id: segment.id },
       },
     };
     let count: number;
@@ -440,7 +440,7 @@ export class SegmentCustomersService {
     const queryCriteria: FindManyOptions<SegmentCustomers> = {
       where: {
         workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
-        segment: segment.id,
+        segment: { id: segment.id },
       },
     };
     let count: number;
@@ -452,5 +452,25 @@ export class SegmentCustomersService {
     return count;
   }
 
-  async isCustomerInSegment() {}
+  async isCustomerInSegment(
+    account: Account,
+    segment: any,
+    customer: string,
+    runner?: QueryRunner
+  ) {
+    const queryCriteria: FindManyOptions<SegmentCustomers> = {
+      where: {
+        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
+        segment: segment,
+        customerId: customer,
+      },
+    };
+    let found: SegmentCustomers;
+    if (runner) {
+      found = await runner.manager.findOne(SegmentCustomers, queryCriteria);
+    } else {
+      found = await this.segmentCustomersRepository.findOne(queryCriteria);
+    }
+    return found ? true : false;
+  }
 }

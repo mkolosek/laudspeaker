@@ -110,6 +110,8 @@ export class CommonBranch {
   index: number;
   /** Step ID (UUID) */
   destination: string;
+  /** Segment ID (UUID) */
+  systemSegment?: string;
 }
 
 /*

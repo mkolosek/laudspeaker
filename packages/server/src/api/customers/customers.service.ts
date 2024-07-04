@@ -415,7 +415,10 @@ export class CustomersService {
       },
     });
 
-    if (process.env.NODE_ENV !== "development" && organization.plan.customerLimit != -1) {
+    if (
+      process.env.NODE_ENV !== 'development' &&
+      organization.plan.customerLimit != -1
+    ) {
       if (
         customersInOrganization + customersToAdd >
         organization.plan.customerLimit
@@ -1666,7 +1669,6 @@ export class CustomersService {
       try {
         result.customer = await this.CustomerModel.create(upsertData);
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
-
       } catch (error: any) {
         // Check if the error is a duplicate key error
         if (error.code === 11000) {
@@ -1696,8 +1698,10 @@ export class CustomersService {
       const deviceTokenSetAtField = iosDeviceToken
         ? 'iosDeviceTokenSetAt'
         : 'androidDeviceTokenSetAt';
-      if (result.customer && result.customer[deviceTokenField] !== deviceTokenValue)
-
+      if (
+        result.customer &&
+        result.customer[deviceTokenField] !== deviceTokenValue
+      )
         result.customer = await this.CustomerModel.findOneAndUpdate(
           { _id: result.customer._id, workspaceId },
           {
@@ -1750,7 +1754,7 @@ export class CustomersService {
           },
           session,
           { ...upsertCustomerDto.properties },
-          "upsert",
+          'upsert',
           // send the upsert proprties once for upsert data and another for
           // trying to find customers via message channels
           { ...upsertCustomerDto.properties }
@@ -2602,7 +2606,7 @@ export class CustomersService {
    * Specifically we can't use unionWith and merge
    *
    */
-  
+
   async documentDBanySegmentCase(
     account: Account,
     session: string,
@@ -2678,53 +2682,52 @@ export class CustomersService {
     );
 
     // Step 3 AND CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
-    if(andOr === 'and'){
+    if (andOr === 'and') {
       // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
       await this.connection.db
-      .collection(finalCollection)
-      .aggregate([
-        {
-          $group: {
-            _id: '$customerId', // Group by customerId
-            count: { $sum: 1 },
-            customerId: { $first: '$customerId' },
+        .collection(finalCollection)
+        .aggregate([
+          {
+            $group: {
+              _id: '$customerId', // Group by customerId
+              count: { $sum: 1 },
+              customerId: { $first: '$customerId' },
+            },
           },
-        },
-        { $match: { count: sets.length } },
-        {
-          $project: {
-            _id: '$customerId',
+          { $match: { count: sets.length } },
+          {
+            $project: {
+              _id: '$customerId',
+            },
           },
-        },
-        {
-          $out: thisCollectionName, // Output the final aggregated documents into the same collection
-        },
-      ])
-      .toArray();
+          {
+            $out: thisCollectionName, // Output the final aggregated documents into the same collection
+          },
+        ])
+        .toArray();
     }
     // Step 3 OR CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
-    else{
+    else {
       await this.connection.db
-      .collection(finalCollection)
-      .aggregate([
-        {
-          $group: {
-            _id: '$customerId', // Group by customerId
-            customerId: { $first: '$customerId' },
+        .collection(finalCollection)
+        .aggregate([
+          {
+            $group: {
+              _id: '$customerId', // Group by customerId
+              customerId: { $first: '$customerId' },
+            },
           },
-        },
-        {
-          $project: {
-            _id: '$customerId',
+          {
+            $project: {
+              _id: '$customerId',
+            },
           },
-        },
-        {
-          $out: thisCollectionName, // Output the final aggregated documents into the same collection
-        },
-      ])
-      .toArray();
+          {
+            $out: thisCollectionName, // Output the final aggregated documents into the same collection
+          },
+        ])
+        .toArray();
     }
-    
 
     //drop all intermediate collections
     try {
@@ -2861,15 +2864,14 @@ export class CustomersService {
       //if (sets.length > 1) {
       // Add each additional collection to the pipeline for union
       if (process.env.DOCUMENT_DB === 'true') {
-        
         await this.documentDBanySegmentCase(
           account,
           session,
           sets,
           collectionName,
           thisCollectionName,
-          "final_and_cfc_",
-          "and"
+          'final_and_cfc_',
+          'and'
         );
       } else {
         sets.forEach((collName) => {
@@ -3008,8 +3010,8 @@ export class CustomersService {
           sets,
           collectionName,
           thisCollectionName,
-          "final_or_cfq_"
-        )
+          'final_or_cfq_'
+        );
       } else {
         // Add each additional collection to the pipeline
         if (sets.length > 1) {
@@ -3185,9 +3187,9 @@ export class CustomersService {
                   sets,
                   collectionName,
                   thisCollectionName,
-                  "final_and_scfq_",
-                  "and"
-                )
+                  'final_and_scfq_',
+                  'and'
+                );
               } else {
                 //if (sets.length > 1) {
                 // Add each additional collection to the pipeline for union
@@ -3275,10 +3277,9 @@ export class CustomersService {
               sets,
               collectionName,
               thisCollectionName,
-              "final_or_gscfq_"
-            )
+              'final_or_gscfq_'
+            );
           } else {
-          
             // Add each additional collection to the pipeline
             if (sets.length > 1) {
               sets.forEach((collName) => {
@@ -3791,8 +3792,7 @@ export class CustomersService {
               );
             stepIds.push(...steps.map((step) => step.id));
           }
-        }
-        catch(error) {
+        } catch (error) {
           this.error(error, this.customersFromMessageStatement.name, session);
           throw error;
         } finally {
@@ -4727,57 +4727,49 @@ export class CustomersService {
           },
           */
           ];
-          if (process.env.DOCUMENT_DB === 'true'){
-            aggregationPipelineMobile.push(
-              {
-                $merge: {
-                  into: "events_test_col",//intermediateCollection, // specify the target collection name
-                  on: '_id', // assuming '_id' is your unique identifier
-                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
-                  whenNotMatched: 'insert', // inserts the document if no match is found
-                },
-              }
-            );
-
+          if (process.env.DOCUMENT_DB === 'true') {
+            aggregationPipelineMobile.push({
+              $merge: {
+                into: 'events_test_col', //intermediateCollection, // specify the target collection name
+                on: '_id', // assuming '_id' is your unique identifier
+                whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                whenNotMatched: 'insert', // inserts the document if no match is found
+              },
+            });
+          } else {
+            aggregationPipelineMobile.push({
+              $merge: {
+                into: intermediateCollection, // specify the target collection name
+                on: '_id', // assuming '_id' is your unique identifier
+                whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                whenNotMatched: 'insert', // inserts the document if no match is found
+              },
+            });
           }
-          else{
 
-            aggregationPipelineMobile.push(
-              {
-                $merge: {
-                  into: intermediateCollection, // specify the target collection name
-                  on: '_id', // assuming '_id' is your unique identifier
-                  whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
-                  whenNotMatched: 'insert', // inserts the document if no match is found
-                },
-              }
+          //to do
+          this.debug(
+            'aggregate mobile query is/n\n',
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          this.debug(
+            JSON.stringify(aggregationPipelineMobile, null, 2),
+            this.customersFromEventStatement.name,
+            session,
+            account.id
+          );
+
+          //fetch users here
+          const mobileResult: any =
+            await this.eventsService.getCustomersbyEventsMongo(
+              aggregationPipelineMobile
             );
 
-          }
-            
-            //to do
-            this.debug(
-              'aggregate mobile query is/n\n',
-              this.customersFromEventStatement.name,
-              session,
-              account.id
-            );
-  
-            this.debug(
-              JSON.stringify(aggregationPipelineMobile, null, 2),
-              this.customersFromEventStatement.name,
-              session,
-              account.id
-            );
-  
-            //fetch users here
-            const mobileResult: any =
-              await this.eventsService.getCustomersbyEventsMongo(
-                aggregationPipelineMobile
-              );
-              
-          if (process.env.DOCUMENT_DB === 'true'){
-            // here we need to add the temp collection back into 
+          if (process.env.DOCUMENT_DB === 'true') {
+            // here we need to add the temp collection back into
             /*
             const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
             const finalCollection = `${finalCollectionPrepend}${collectionName}`;
@@ -4807,8 +4799,6 @@ export class CustomersService {
               }
               */
           }
-
-  
 
           // we do one more merge with mobile users for those who may include the event correlationValues in their other_ids field
           const aggregationPipelineMobileOtherIds: any[] = [
@@ -5284,25 +5274,7 @@ export class CustomersService {
       // }).exec();
       if (!customer) throw new Error('Person not found');
     }
-    this.debug(
-      `the query is: ${JSON.stringify(query, null, 2)}`,
-      this.checkCustomerMatchesQuery.name,
-      session,
-      account.id
-    );
-    this.debug(
-      `the customer is: ${JSON.stringify(customer, null, 2)}`,
-      this.checkCustomerMatchesQuery.name,
-      session,
-      account.id
-    );
     if (query.type === 'all') {
-      this.debug(
-        'the query has all (AND',
-        this.checkCustomerMatchesQuery.name,
-        session,
-        account.id
-      );
       // 'all' logic: All conditions must be satisfied
       if (!query.statements || query.statements.length === 0) {
         // If no statements are provided, return false
@@ -5321,12 +5293,6 @@ export class CustomersService {
       );
       return results.every((result) => result);
     } else if (query.type === 'any') {
-      this.debug(
-        'the query has any (OR)',
-        this.checkCustomerMatchesQuery.name,
-        session,
-        account.id
-      );
       // 'any' logic: At least one condition must be satisfied
       if (!query.statements || query.statements.length === 0) {
         // If no statements are provided, return true
@@ -5345,17 +5311,6 @@ export class CustomersService {
       );
       return results.some((result) => result);
     } else {
-      //shouldnt get here
-      this.debug(
-        `shouldnt get here, what is query type?: ${JSON.stringify(
-          query.type,
-          null,
-          2
-        )}`,
-        this.checkCustomerMatchesQuery.name,
-        session,
-        account.id
-      );
     }
     return false;
   }
@@ -6396,7 +6351,6 @@ export class CustomersService {
               return;
             } else {
               // currentBatch.push(convertedPKValue);
-
               // if (currentBatch.length >= 10000) {
               //   promisesList.push(
               //     (async () => {

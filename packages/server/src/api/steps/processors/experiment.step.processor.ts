@@ -56,7 +56,7 @@ export class ExperimentStepProcessor extends WorkerHost {
     private journeyLocationsService: JourneyLocationsService,
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(CacheService) private cacheService: CacheService,
-    @Inject(QueueService) private queueService: QueueService,
+    @Inject(QueueService) private queueService: QueueService
   ) {
     super();
   }
@@ -163,7 +163,8 @@ export class ExperimentStepProcessor extends WorkerHost {
         );
 
         if (nextStep) {
-          const nextStepDepth: number = this.queueService.getNextStepDepthFromJob(job);
+          const nextStepDepth: number =
+            this.queueService.getNextStepDepthFromJob(job);
 
           if (
             nextStep.type !== StepType.TIME_DELAY &&
@@ -178,7 +179,7 @@ export class ExperimentStepProcessor extends WorkerHost {
               location: job.data.location,
               customer: job.data.customer,
               event: job.data.event,
-              stepDepth: nextStepDepth
+              stepDepth: nextStepDepth,
             };
           } else {
             // Destination is time based,

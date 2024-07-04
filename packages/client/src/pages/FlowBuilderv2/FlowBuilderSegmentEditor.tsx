@@ -70,7 +70,7 @@ const enrollmentTypes = [
 interface FlowBuilderSegmentEditorProps {
   onSave?: () => void;
   onCancel?: () => void;
-  journeyStatus?: JourneyStatus
+  journeyStatus?: JourneyStatus;
 }
 
 const FlowBuilderSegmentEditor: FC<FlowBuilderSegmentEditorProps> = ({
@@ -86,10 +86,6 @@ const FlowBuilderSegmentEditor: FC<FlowBuilderSegmentEditorProps> = ({
   const dispatch = useAppDispatch();
 
   if (!journeyEntrySettings) return <></>;
-
-  console.log("in flow seg editor")
-  console.log("seg settings are", segmentsSettings);
-
   return (
     <div className="m-5 max-h-full overflow-y-scroll w-full bg-white rounded p-5 text-[#111827] font-inter">
       <div className="flex flex-col gap-5">
@@ -460,17 +456,17 @@ const FlowBuilderSegmentEditor: FC<FlowBuilderSegmentEditorProps> = ({
           <div className="flex flex-col gap-[10px]">
             <div className="font-semibold text-base">Conditions</div>
             {journeyStatus === JourneyStatus.DRAFT ? (
-            <FilterBuilder
+              <FilterBuilder
                 settings={segmentsSettings}
                 onSettingsChange={(settings) =>
-                    dispatch(
-                        setSegmentsSettings(settings as ConditionalSegmentsSettings)
-                    )
+                  dispatch(
+                    setSegmentsSettings(settings as ConditionalSegmentsSettings)
+                  )
                 }
-            />
-        ) : (
-            <FilterViewer settingsQuery={segmentsSettings.query} />
-        )} 
+              />
+            ) : (
+              <FilterViewer settingsQuery={segmentsSettings.query} />
+            )}
           </div>
         )}
 

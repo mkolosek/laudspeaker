@@ -325,18 +325,6 @@ export class EventsController {
     @Body() body: any
   ): Promise<void | HttpException> {
     const session = randomUUID();
-    if (body.batch){
-      for (const thisEvent of body.batch) {
-        if (thisEvent.event){
-          this.debug(
-            `batch: event name ${JSON.stringify(thisEvent.event, null, 2)} and ${JSON.stringify(thisEvent.$fcm, null, 2)}`,
-            this.batchEndpoint.name,
-            session,
-            "System"
-          );
-        }
-      }    
-    }   
     return this.eventsService.batch(
       <{ account: Account; workspace: Workspaces }>user,
       body,

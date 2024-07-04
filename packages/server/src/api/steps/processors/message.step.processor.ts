@@ -79,7 +79,7 @@ export class MessageStepProcessor extends WorkerHost {
     @Inject(WebhooksService)
     private readonly webhooksService: WebhooksService,
     @InjectQueue('{webhooks}') private readonly webhooksQueue: Queue,
-    @Inject(QueueService) private queueService: QueueService,
+    @Inject(QueueService) private queueService: QueueService
   ) {
     super();
   }
@@ -591,7 +591,7 @@ export class MessageStepProcessor extends WorkerHost {
                   stepId: job.data.step.id,
                   customerId: job.data.customer._id,
                   accountId: job.data.owner.id,
-                  stepDepth: job.data.stepDepth
+                  stepDepth: job.data.stepDepth,
                 };
 
                 await this.queueService.addToQueue(
@@ -706,7 +706,8 @@ export class MessageStepProcessor extends WorkerHost {
         );
 
         if (nextStep) {
-          const nextStepDepth: number = this.queueService.getNextStepDepthFromJob(job);
+          const nextStepDepth: number =
+            this.queueService.getNextStepDepthFromJob(job);
 
           if (
             nextStep.type !== StepType.TIME_DELAY &&

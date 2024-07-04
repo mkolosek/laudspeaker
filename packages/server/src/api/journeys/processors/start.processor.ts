@@ -60,7 +60,7 @@ export class StartProcessor extends WorkerHost {
     @Inject(JourneysService)
     private readonly journeysService: JourneysService,
     @Inject(StepsService) private stepsService: StepsService,
-    @Inject(QueueService) private queueService: QueueService,
+    @Inject(QueueService) private queueService: QueueService
   ) {
     super();
   }
@@ -208,25 +208,28 @@ export class StartProcessor extends WorkerHost {
     }
     //otherwise, split query in half and add both halves to the start queue
     else {
-      const jobsData = [{
-        owner: job.data.owner,
-        journey: job.data.journey,
-        step: job.data.step,
-        session: job.data.session,
-        query: job.data.query,
-        skip: job.data.skip,
-        limit: Math.floor(job.data.limit / 2),
-        collectionName: job.data.collectionName,
-      }, {
-        owner: job.data.owner,
-        journey: job.data.journey,
-        step: job.data.step,
-        session: job.data.session,
-        query: job.data.query,
-        skip: job.data.skip + Math.floor(job.data.limit / 2),
-        limit: Math.ceil(job.data.limit / 2),
-        collectionName: job.data.collectionName,
-      }];
+      const jobsData = [
+        {
+          owner: job.data.owner,
+          journey: job.data.journey,
+          step: job.data.step,
+          session: job.data.session,
+          query: job.data.query,
+          skip: job.data.skip,
+          limit: Math.floor(job.data.limit / 2),
+          collectionName: job.data.collectionName,
+        },
+        {
+          owner: job.data.owner,
+          journey: job.data.journey,
+          step: job.data.step,
+          session: job.data.session,
+          query: job.data.query,
+          skip: job.data.skip + Math.floor(job.data.limit / 2),
+          limit: Math.ceil(job.data.limit / 2),
+          collectionName: job.data.collectionName,
+        },
+      ];
 
       await this.queueService.addBulkToQueue(
         this.startQueue,

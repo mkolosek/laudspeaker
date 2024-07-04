@@ -28,7 +28,7 @@ import {
   PosthogEventType,
   PosthogEventTypeSchema,
 } from './schemas/posthog-event-type.schema';
-import { EventsProcessor } from './events.processor';
+import { EventsProcessor } from './processors/events.processor';
 import {
   PosthogEvent,
   PosthogEventSchema,
@@ -36,7 +36,7 @@ import {
 import { JourneysModule } from '../journeys/journeys.module';
 import { AudiencesHelper } from '../audiences/audiences.helper';
 import { SegmentsModule } from '../segments/segments.module';
-import { EventsPreProcessor } from './events.preprocessor';
+import { EventsPreProcessor } from './processors/events.preprocessor';
 import { WebsocketsModule } from '@/websockets/websockets.module';
 import { RedlockModule } from '../redlock/redlock.module';
 import { RedlockService } from '../redlock/redlock.service';
@@ -61,6 +61,7 @@ import { TimeDelayStepProcessor } from '../steps/processors/time.delay.step.proc
 import { TimeWindowStepProcessor } from '../steps/processors/time.window.step.processor';
 import { OrganizationsModule } from '../organizations/organizations.module';
 import { QueueService } from '@/common/services/queue.service';
+import { EventsPostProcessor } from './processors/events.postprocessor';
 
 function getProvidersList() {
   let providerList: Array<any> = [
@@ -71,7 +72,7 @@ function getProvidersList() {
     CustomersService,
     S3Service,
     CacheService,
-    QueueService
+    QueueService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
@@ -79,6 +80,7 @@ function getProvidersList() {
       ...providerList,
       EventsProcessor,
       EventsPreProcessor,
+      EventsPostProcessor,
       ExitStepProcessor,
       ExperimentStepProcessor,
       JumpToStepProcessor,
@@ -157,6 +159,9 @@ function getProvidersList() {
     }),
     BullModule.registerQueue({
       name: '{events_pre}',
+    }),
+    BullModule.registerQueue({
+      name: '{events_post}',
     }),
     BullModule.registerQueue({
       name: '{webhooks}',

@@ -27,6 +27,7 @@ import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity
 import { CacheService } from '@/common/services/cache.service';
 import { CustomersService } from '@/api/customers/customers.service';
 import { QueueService } from '@/common/services/queue.service';
+import { SegmentCustomersService } from '@/api/segments/segment-customers.service';
 
 @Injectable()
 @Processor('{multisplit.step}', {
@@ -52,20 +53,6 @@ export class MultisplitStepProcessor extends WorkerHost {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start.step}') private readonly startStepQueue: Queue,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
-    @InjectQueue('{message.step}') private readonly messageStepQueue: Queue,
-    @InjectQueue('{jump.to.step}') private readonly jumpToStepQueue: Queue,
-    @InjectQueue('{time.delay.step}')
-    private readonly timeDelayStepQueue: Queue,
-    @InjectQueue('{time.window.step}')
-    private readonly timeWindowStepQueue: Queue,
-    @InjectQueue('{multisplit.step}')
-    private readonly multisplitStepQueue: Queue,
-    @InjectQueue('{experiment.step}')
-    private readonly experimentStepQueue: Queue,
-    @InjectQueue('{exit.step}') private readonly exitStepQueue: Queue,
     @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
@@ -73,6 +60,8 @@ export class MultisplitStepProcessor extends WorkerHost {
     @Inject(CacheService) private cacheService: CacheService,
     @Inject(CustomersService) private customersService: CustomersService,
     @Inject(QueueService) private queueService: QueueService,
+    @Inject(SegmentCustomersService)
+    private segmentCustomersService: SegmentCustomersService
   ) {
     super();
   }
@@ -167,11 +156,10 @@ export class MultisplitStepProcessor extends WorkerHost {
           branchIndex++
         ) {
           if (
-            await this.customersService.checkCustomerMatchesQuery(
-              job.data.step.metadata.branches[branchIndex].conditions.query,
+            await this.segmentCustomersService.isCustomerInSegment(
               job.data.owner,
-              job.data.session,
-              job.data.customer
+              job.data.step.metadata.branches[branchIndex].systemSegment,
+              job.data.customer._id
             )
           ) {
             matches = true;
@@ -191,7 +179,8 @@ export class MultisplitStepProcessor extends WorkerHost {
         );
 
         if (nextStep) {
-          const nextStepDepth: number = this.queueService.getNextStepDepthFromJob(job);
+          const nextStepDepth: number =
+            this.queueService.getNextStepDepthFromJob(job);
 
           if (
             nextStep.type !== StepType.TIME_DELAY &&
@@ -206,7 +195,7 @@ export class MultisplitStepProcessor extends WorkerHost {
               customer: job.data.customer,
               location: job.data.location,
               event: job.data.event,
-              stepDepth: nextStepDepth
+              stepDepth: nextStepDepth,
             };
           } else {
             // Destination is time based,

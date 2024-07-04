@@ -57,7 +57,7 @@ import {
   PushPlatforms,
 } from '../templates/entities/template.entity';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
-import { ProviderType } from './events.preprocessor';
+import { ProviderType } from './processors/events.preprocessor';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
 import {
@@ -1190,17 +1190,8 @@ export class EventsService {
   ) {
     return Sentry.startSpan({ name: 'EventsService.batch' }, async () => {
       let err: any;
-
-      //console.log("oi", JSON.stringify(MobileBatchDto, null, 2));
-
       try {
         for (const thisEvent of MobileBatchDto.batch) {
-          this.debug(
-            `MobileBatchDto: event name ${JSON.stringify(thisEvent.event, null, 2)} and ${JSON.stringify(thisEvent.$fcm, null, 2)}`,
-            this.batch.name,
-            session,
-            auth.account.id
-          );
           if (
             thisEvent.source === 'message' &&
             thisEvent.event === '$delivered'
@@ -1208,11 +1199,16 @@ export class EventsService {
             continue;
           if (thisEvent.source === 'message' && thisEvent.event === '$opened') {
             const clickHouseRecord: ClickHouseMessage = {
-              workspaceId: thisEvent.payload.workspaceID || thisEvent.payload.workspaceId,
+              workspaceId:
+                thisEvent.payload.workspaceID || thisEvent.payload.workspaceId,
               stepId: thisEvent.payload.stepID || thisEvent.payload.stepId,
-              customerId: thisEvent.payload.customerID || thisEvent.payload.customerId,
-              templateId: String(thisEvent.payload.templateID) ||  String(thisEvent.payload.templateId),
-              messageId: thisEvent.payload.messageID || thisEvent.payload.messageId,
+              customerId:
+                thisEvent.payload.customerID || thisEvent.payload.customerId,
+              templateId:
+                String(thisEvent.payload.templateID) ||
+                String(thisEvent.payload.templateId),
+              messageId:
+                thisEvent.payload.messageID || thisEvent.payload.messageId,
               event: 'opened',
               eventProvider: ClickHouseEventProvider.PUSH,
               processed: false,
@@ -1344,8 +1340,8 @@ export class EventsService {
     customer: CustomerDocument,
     correlationValue: string | string[],
     session: string,
-    account: Account) {
-
+    account: Account
+  ) {
     this.debug(
       `customer: ${JSON.stringify(customer)},
       correlationValue: ${JSON.stringify(correlationValue)}`,
@@ -1466,7 +1462,7 @@ export class EventsService {
         },
         session,
         {},
-        "event",
+        'event',
         event
       );
 

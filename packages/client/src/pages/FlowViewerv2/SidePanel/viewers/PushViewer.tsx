@@ -121,14 +121,14 @@ const PushViewer: FC<SidePanelComponentProps<MessageNodeData>> = ({
                     className="bg-[#111827] rounded-none p-[5px] text-white"
                     content={`${nodeData.stats?.[stat.key] || 0}`}
                   >
-                  <div className="font-roboto text-[14px] leading-[22px] text-[#6B7280]">
-                    {stat.name}
-                  </div>
+                    <div className="font-roboto text-[14px] leading-[22px] text-[#6B7280]">
+                      {stat.name}
+                    </div>
                   </Tooltip>
-                  <div className="font-roboto text-[24px] leading-[28px]"> 
-                      <div className="relative">
-                        <div className="w-[8px] h-[8px] bg-transparent rounded-[100%]" />
-                      </div>
+                  <div className="font-roboto text-[24px] leading-[28px]">
+                    <div className="relative">
+                      <div className="w-[8px] h-[8px] bg-transparent rounded-[100%]" />
+                    </div>
                     {`${nodeData.stats?.[stat.key] || 0}`}
                   </div>
                 </div>

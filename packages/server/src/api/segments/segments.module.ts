@@ -15,6 +15,7 @@ import { JourneysModule } from '../journeys/journeys.module';
 import { AccountsModule } from '../accounts/accounts.module';
 import { SegmentCustomersService } from './segment-customers.service';
 import { Account } from '../accounts/entities/accounts.entity';
+import { StepsModule } from '../steps/steps.module';
 
 function getProvidersList() {
   let providerList: Array<any> = [
@@ -35,7 +36,7 @@ function getProvidersList() {
 }
 
 function getExportList() {
-  let exportList: Array<any> = [SegmentsService];
+  let exportList: Array<any> = [SegmentsService, SegmentCustomersService];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
     exportList = [
@@ -60,12 +61,16 @@ function getExportList() {
       name: '{customer_change}',
     }),
     BullModule.registerQueue({
+      name: '{enrollment}',
+    }),
+    BullModule.registerQueue({
       name: '{imports}',
     }),
     TypeOrmModule.forFeature([Segment, SegmentCustomers, Account]),
     forwardRef(() => CustomersModule),
     forwardRef(() => WorkflowsModule),
     forwardRef(() => JourneysModule),
+    forwardRef(() => StepsModule),
     forwardRef(() => AccountsModule),
   ],
   controllers: [SegmentsController],

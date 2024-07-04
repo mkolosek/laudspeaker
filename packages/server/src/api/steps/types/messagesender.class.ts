@@ -458,7 +458,7 @@ export class MessageSender {
         break;
     }
     if (trackingEmail) {
-      if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+      if (process.env.POSTHOG_MESSAGE_COUNT !== 'false') {
         this.phClient.capture({
           distinctId: trackingEmail,
           event: 'message_sent',
@@ -571,7 +571,7 @@ export class MessageSender {
       },
     ];
     if (trackingEmail) {
-      if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+      if (process.env.POSTHOG_MESSAGE_COUNT !== 'false') {
         this.phClient.capture({
           distinctId: trackingEmail,
           event: 'message_sent',
@@ -765,7 +765,7 @@ export class MessageSender {
         account.email
       );
       if (trackingEmail) {
-        if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+        if (process.env.POSTHOG_MESSAGE_COUNT !== 'false') {
           this.phClient.capture({
             distinctId: trackingEmail,
             event: 'message_sent',
@@ -986,7 +986,7 @@ export class MessageSender {
         account.email
       );
       if (trackingEmail) {
-        if(process.env.POSTHOG_MESSAGE_COUNT !== 'false'){
+        if (process.env.POSTHOG_MESSAGE_COUNT !== 'false') {
           this.phClient.capture({
             distinctId: trackingEmail,
             event: 'message_sent',

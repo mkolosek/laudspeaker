@@ -12,8 +12,8 @@ import { SegmentsService } from '@/api/segments/segments.service';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
 import { Customer, CustomerDocument } from '../schemas/customer.schema';
-import { Account } from '@/api/accounts/entities/accounts.entity';
-import { ProviderType } from '@/api/events/events.preprocessor';
+import { Account } from '../../accounts/entities/accounts.entity';
+import { ProviderType } from '../../events/processors/events.preprocessor';
 
 const containsUnskippedKeys = (updateDescription) => {
   // Combine keys from updatedFields, removedFields, and the fields of truncatedArrays

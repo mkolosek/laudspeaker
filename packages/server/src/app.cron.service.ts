@@ -127,7 +127,7 @@ export class CronService {
     @Inject(RedlockService)
     private readonly redlockService: RedlockService,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @Inject(QueueService) private queueService: QueueService,
+    @Inject(QueueService) private queueService: QueueService
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -517,14 +517,29 @@ export class CronService {
           filteredJobs = filteredJobs.map((job) => job.data);
 
           return filteredJobs;
-        }
-        const waitUntilJobsData = jobDataFilter(StepType.WAIT_UNTIL_BRANCH, timeBasedJobs);
-        const timeDelayJobsData = jobDataFilter(StepType.TIME_DELAY, timeBasedJobs);
-        const timeWindowJobsData = jobDataFilter(StepType.TIME_WINDOW, timeBasedJobs);
+        };
+        const waitUntilJobsData = jobDataFilter(
+          StepType.WAIT_UNTIL_BRANCH,
+          timeBasedJobs
+        );
+        const timeDelayJobsData = jobDataFilter(
+          StepType.TIME_DELAY,
+          timeBasedJobs
+        );
+        const timeWindowJobsData = jobDataFilter(
+          StepType.TIME_WINDOW,
+          timeBasedJobs
+        );
 
-        await this.queueService.addBulk(StepType.WAIT_UNTIL_BRANCH, waitUntilJobsData);
+        await this.queueService.addBulk(
+          StepType.WAIT_UNTIL_BRANCH,
+          waitUntilJobsData
+        );
         await this.queueService.addBulk(StepType.TIME_DELAY, timeDelayJobsData);
-        await this.queueService.addBulk(StepType.TIME_WINDOW, timeWindowJobsData);
+        await this.queueService.addBulk(
+          StepType.TIME_WINDOW,
+          timeWindowJobsData
+        );
       }
 
       // Handle expiry of recovery emails

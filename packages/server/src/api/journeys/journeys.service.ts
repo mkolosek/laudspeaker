@@ -251,9 +251,9 @@ export class JourneysService {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
     @Inject(RedisService) private redisService: RedisService,
-    @InjectQueue('{enrollment}') private readonly enrollmentQueue: Queue,
+    @InjectQueue('{segment_update}')
+    private readonly segmentUpdateQueue: Queue,
     @Inject(CacheService) private cacheService: CacheService
   ) {}
 
@@ -772,25 +772,24 @@ export class JourneysService {
       ...journey,
       visualLayout: {
         edges: [],
-        nodes: []
+        nodes: [],
       },
-      inclusionCriteria: {
-      }
+      inclusionCriteria: {},
     };
     // Prepare a deep copy of the account to modify without affecting the original account object
     const modifiedAccount = {
       ...account,
-      teams: account.teams.map(team => ({
+      teams: account.teams.map((team) => ({
         ...team,
         organization: {
           ...team.organization,
-          workspaces: team.organization.workspaces.map(workspace => ({
+          workspaces: team.organization.workspaces.map((workspace) => ({
             ...workspace,
-            pushConnections: [] //, Clears the pushConnections array
+            pushConnections: [], //, Clears the pushConnections array
             //pushPlatforms: null // Clears the pushPlatforms info
-          }))
-        }
-      }))
+          })),
+        },
+      })),
     };
 
     for (const customer of customers) {
@@ -1864,7 +1863,7 @@ export class JourneysService {
 
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
-      await this.enrollmentQueue.add('enroll', {
+      await this.segmentUpdateQueue.add('createSystem', {
         account,
         journey,
         session,

@@ -103,7 +103,7 @@ function getProvidersList() {
     RedlockService,
     JourneyLocationsService,
     HealthCheckService,
-    QueueService
+    QueueService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'CRON') {
@@ -124,15 +124,17 @@ const myFormat = winston.format.printf(function ({
   try {
     ctx = JSON.parse(context);
   } catch (e) {}
-  return `[${timestamp}] [${level}] [${process.env.LAUDSPEAKER_PROCESS_TYPE}-${process.pid}]${
-    ctx?.class ? ' [Class: ' + ctx?.class + ']' : ''
-  }${ctx?.method ? ' [Method: ' + ctx?.method + ']' : ''}${
-    ctx?.session ? ' [User: ' + ctx?.user + ']' : ''
-  }${ctx?.session ? ' [Session: ' + ctx?.session + ']' : ''}: ${message} ${
-    stack ? '{stack: ' + stack : ''
-  } ${ctx.cause ? 'cause: ' + ctx.cause : ''} ${
-    ctx.message ? 'message: ' + ctx.message : ''
-  } ${ctx.name ? 'name: ' + ctx.name + '}' : ''}`;
+  return `[${timestamp}] [${level}] [${process.env.LAUDSPEAKER_PROCESS_TYPE}-${
+    process.pid
+  }]${ctx?.class ? ' [Class: ' + ctx?.class + ']' : ''}${
+    ctx?.method ? ' [Method: ' + ctx?.method + ']' : ''
+  }${ctx?.session ? ' [User: ' + ctx?.user + ']' : ''}${
+    ctx?.session ? ' [Session: ' + ctx?.session + ']' : ''
+  }: ${message} ${stack ? '{stack: ' + stack : ''} ${
+    ctx.cause ? 'cause: ' + ctx.cause : ''
+  } ${ctx.message ? 'message: ' + ctx.message : ''} ${
+    ctx.name ? 'name: ' + ctx.name + '}' : ''
+  }`;
 });
 
 export const formatMongoConnectionString = (mongoConnectionString: string) => {

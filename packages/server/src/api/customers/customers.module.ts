@@ -86,6 +86,9 @@ function getExportsList() {
     BullModule.registerQueue({
       name: '{events_pre}',
     }),
+    BullModule.registerQueue({
+      name: '{segment_update}',
+    }),
     AccountsModule,
     SegmentsModule,
     AudiencesModule,

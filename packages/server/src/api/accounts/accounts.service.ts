@@ -917,7 +917,7 @@ export class AccountsService extends BaseJwtHelper {
           type: 'redirect',
           redirect: {
             //url: process.env.FRONTEND_URL + '/payment-gate',
-            url:  'https://app.laudspeaker.com/home',
+            url: 'https://app.laudspeaker.com/home',
           },
         },
         //success_url: 'http://your_success_url_here',

@@ -39,7 +39,7 @@ export class EnrollmentProcessor extends WorkerHost {
     private readonly customersService: CustomersService,
     @Inject(JourneysService)
     private journeyService: JourneysService,
-    @Inject(QueueService) private queueService: QueueService,
+    @Inject(QueueService) private queueService: QueueService
   ) {
     super();
   }
@@ -121,7 +121,7 @@ export class EnrollmentProcessor extends WorkerHost {
     let err: any;
     let triggerStartTasks: {
       collectionName: string;
-      jobData: any
+      jobData: any;
     };
     let collectionName: string;
     let count: number;

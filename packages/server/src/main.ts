@@ -22,7 +22,10 @@ const morgan = require('morgan');
 let numProcesses = 1;
 
 if (process.env.MAX_PROCESS_COUNT_PER_REPLICA)
-  numProcesses = Math.max(1, parseInt(process.env.MAX_PROCESS_COUNT_PER_REPLICA));
+  numProcesses = Math.max(
+    1,
+    parseInt(process.env.MAX_PROCESS_COUNT_PER_REPLICA)
+  );
 
 if (cluster.isPrimary) {
   console.log(`Primary ${process.pid} is running`);

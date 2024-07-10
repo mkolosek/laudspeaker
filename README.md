@@ -48,7 +48,7 @@ We are planning to build Laudspeaker to work well with the Modern Data Stack, in
 - [x] Public Beta: Stable enough for most non-enterprise use-cases.
 - [ ] Public: Production-ready.
 
-We're currently in Public Alpha.
+We're currently in Public Beta.
 
 ## License
 

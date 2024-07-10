@@ -133,6 +133,7 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
         });
       } catch (err) {
         this.error(err, this.handleCustomerChangeStream.name, session);
+        throw err;
       }
     };
   }

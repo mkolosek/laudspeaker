@@ -44,8 +44,8 @@ We are planning to build Laudspeaker to work well with the Modern Data Stack, in
 
 ## 🐥 Status
 
-- [x] Public Alpha: Anyone can sign up over at [laudspeaker.com](https://laudspeaker.com) but go easy on us, there are wrinkles and we're just getting started.
-- [ ] Public Beta: Stable enough for most non-enterprise use-cases.
+- [ ] Public Alpha: Anyone can sign up over at [laudspeaker.com](https://laudspeaker.com) but go easy on us, there are wrinkles and we're just getting started.
+- [x] Public Beta: Stable enough for most non-enterprise use-cases.
 - [ ] Public: Production-ready.
 
 We're currently in Public Alpha.

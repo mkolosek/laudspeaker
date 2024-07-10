@@ -56,7 +56,7 @@ We're currently in Public Beta.
 
 ## 🌱 Contribute
 
-We would love to see you contribute to Laudspeaker. Join our slack to get involved.
+We would love to see you contribute to Laudspeaker. We are specifically seeking contributions for additional messaging channels. Join our slack to get involved.
 
 ## Follow Us
 

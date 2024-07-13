@@ -172,16 +172,16 @@ export class SegmentUpdateProcessor extends WorkerHost {
       const jobCounts = await this.customerChangeQueue.getJobCounts('active');
       const activeJobs = jobCounts.active;
 
-      if (activeJobs === 0) {
-        break; // Exit the loop if the number of waiting jobs is below the threshold
+      if (jobCounts && jobCounts.active && jobCounts.active > 0) {
+        this.warn(
+          `Waiting for the customer change queue to clear. Current active jobs: ${activeJobs}`,
+          this.process.name,
+          job.data.session
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
+      } else {
+        break;
       }
-
-      this.warn(
-        `Waiting for the customer change queue to clear. Current active jobs: ${activeJobs}`,
-        this.process.name,
-        job.data.session
-      );
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
     }
     const queryRunner = await this.dataSource.createQueryRunner();
     const client = await queryRunner.connect();
@@ -225,7 +225,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
               this.segmentsService.generateRandomString();
             const customersInSegment =
               await this.customersService.getSegmentCustomersFromQuery(
-                segment.inclusionCriteria,
+                segment.inclusionCriteria.query,
                 job.data.account,
                 job.data.session,
                 true,

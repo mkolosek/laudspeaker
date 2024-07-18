@@ -15,22 +15,22 @@ import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 
 @Injectable()
 @Processor('{events_post}', {
-  stalledInterval: process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
+  stalledInterval: process.env.EVENTS_POST_PROCESSOR_STALLED_INTERVAL
+    ? +process.env.EVENTS_POST_PROCESSOR_STALLED_INTERVAL
     : 30000,
   removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+    age: process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE_AGE
       : 0,
-    count: process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
+    count: process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE
+      ? +process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE
       : 0,
   },
   metrics: {
     maxDataPoints: MetricsTime.ONE_WEEK,
   },
-  concurrency: process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
-    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
+  concurrency: process.env.EVENTS_POST_PROCESSOR_CONCURRENCY
+    ? +process.env.EVENTS_POST_PROCESSOR_CONCURRENCY
     : 1,
 })
 export class EventsPostProcessor extends WorkerHost {

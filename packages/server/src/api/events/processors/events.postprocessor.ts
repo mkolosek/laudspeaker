@@ -12,6 +12,7 @@ import mongoose from 'mongoose';
 import { CustomerDocument } from '../../customers/schemas/customer.schema';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { Workspaces } from '../../workspaces/entities/workspaces.entity';
+import * as Sentry from '@sentry/node';
 
 @Injectable()
 @Processor('{events_post}', {
@@ -37,13 +38,7 @@ export class EventsPostProcessor extends WorkerHost {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    private readonly customersService: CustomersService,
-    private readonly journeysService: JourneysService,
-    private readonly accountsService: AccountsService,
     private readonly segmentsService: SegmentsService,
-    @InjectQueue('{events_pre}')
-    private readonly eventPreprocessorQueue: Queue,
-    @InjectConnection() private readonly connection: mongoose.Connection,
     private dataSource: DataSource
   ) {
     super();
@@ -121,35 +116,40 @@ export class EventsPostProcessor extends WorkerHost {
       any
     >
   ): Promise<any> {
-    let err: any;
-    const queryRunner = await this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-    try {
-      await this.segmentsService.updateCustomerSegmentsUsingEvent(
-        job.data.owner,
-        job.data.event,
-        job.data.customer._id,
-        job.data.session,
-        queryRunner
-      );
-      // TODO: Add back journey enrollment updater
-      // await this.journeysService.updateEnrollmentForCustomer(
-      //   job.data.owner,
-      //   customer._id,
-      //   message.operationType === 'insert' ? 'NEW' : 'CHANGE',
-      //   job.data.session,
-      //   queryRunner,
-      //   clientSession
-      // );
-      await queryRunner.commitTransaction();
-    } catch (e) {
-      this.error(e, this.process.name, job.data.session);
-      err = e;
-      await queryRunner.rollbackTransaction();
-    } finally {
-      await queryRunner.release();
-      if (err) throw err;
-    }
+    return Sentry.startSpan(
+      { name: 'EventsPostProcessor.process' },
+      async () => {
+        let err: any;
+        const queryRunner = await this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+        try {
+          await this.segmentsService.updateCustomerSegmentsUsingEvent(
+            job.data.owner,
+            job.data.event,
+            job.data.customer._id,
+            job.data.session,
+            queryRunner
+          );
+          // TODO: Add back journey enrollment updater
+          // await this.journeysService.updateEnrollmentForCustomer(
+          //   job.data.owner,
+          //   customer._id,
+          //   message.operationType === 'insert' ? 'NEW' : 'CHANGE',
+          //   job.data.session,
+          //   queryRunner,
+          //   clientSession
+          // );
+          await queryRunner.commitTransaction();
+        } catch (e) {
+          this.error(e, this.process.name, job.data.session);
+          err = e;
+          await queryRunner.rollbackTransaction();
+        } finally {
+          await queryRunner.release();
+          if (err) throw err;
+        }
+      }
+    );
   }
 }

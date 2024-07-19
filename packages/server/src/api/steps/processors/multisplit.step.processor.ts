@@ -35,8 +35,8 @@ import { SegmentCustomersService } from '@/api/segments/segment-customers.servic
     ? +process.env.MULTISPLIT_STEP_PROCESSOR_STALLED_INTERVAL
     : 600000,
   removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+    age: process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
+      ? +process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
       : 0,
     count: process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE
       ? +process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE

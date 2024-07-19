@@ -460,7 +460,7 @@ export class SegmentCustomersService {
   ) {
     const queryCriteria: FindManyOptions<SegmentCustomers> = {
       where: {
-        workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
+        // workspace: { id: account.teams?.[0]?.organization?.workspaces?.[0].id },
         segment: segment,
         customerId: customer,
       },

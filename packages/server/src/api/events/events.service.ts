@@ -151,6 +151,7 @@ export class EventsService {
         await collection.createIndex({ event: 1, workspaceId: 1 });
         await collection.createIndex({ correlationKey: 1, workspaceId: 1 });
         await collection.createIndex({ correlationValue: 1, workspaceId: 1 });
+        await collection.createIndex({ correlationValue: 1, workspaceId: 1, event:1 });
         await collection.createIndex({ createdAt: 1 });
         await collection.createIndex({ workspaceId: 1, _id: -1 });
         await collection.createIndex({ event: 'text' });
@@ -779,8 +780,6 @@ export class EventsService {
     //externalId: boolean,
     //numberOfTimes: Number,
   ) {
-    //console.log("In getCustomersbyEventsMongo by mongo");
-
     const docs = await this.EventModel.aggregate(aggregationPipeline).exec();
 
     return docs;

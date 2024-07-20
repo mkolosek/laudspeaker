@@ -163,6 +163,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
         account: Account;
         session: string;
         journey: Journey;
+        segment: Segment;
       },
       any,
       string
@@ -188,108 +189,81 @@ export class SegmentUpdateProcessor extends WorkerHost {
     await queryRunner.startTransaction();
 
     try {
-      const steps: Step[] =
-        await this.stepsService.transactionalfindAllByTypeInJourney(
+      const collectionPrefix = this.segmentsService.generateRandomString();
+      const customersInSegment =
+        await this.customersService.getSegmentCustomersFromQuery(
+          job.data.segment.inclusionCriteria.query,
           job.data.account,
-          StepType.MULTISPLIT,
-          job.data.journey.id,
-          queryRunner,
+          job.data.session,
+          true,
+          0,
+          collectionPrefix
+        );
+
+      if (!customersInSegment) return; // The segment definition doesnt have any customers in it...
+      const CUSTOMERS_PER_BATCH = 50000;
+      let batch = 0;
+      const mongoCollection = this.connection.db.collection(customersInSegment);
+      const totalDocuments = await mongoCollection.countDocuments();
+
+      while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
+        const customers = await this.customersService.find(
+          job.data.account,
+          job.data.segment.inclusionCriteria,
+          job.data.session,
+          null,
+          batch * CUSTOMERS_PER_BATCH,
+          CUSTOMERS_PER_BATCH,
+          customersInSegment
+        );
+        this.log(
+          `Skip ${batch * CUSTOMERS_PER_BATCH}, limit: ${CUSTOMERS_PER_BATCH}`,
+          this.handleCreateDynamic.name,
           job.data.session
         );
-      if (steps.length) {
-        for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
-          for (
-            let branchIndex = 0;
-            branchIndex < steps[stepIndex].metadata.branches.length;
-            branchIndex++
-          ) {
-            // extract the rules for each multisplit
-            const segment = await queryRunner.manager.save(Segment, {
-              type: SegmentType.SYSTEM,
-              name: '__SYSTEM__',
-              inclusionCriteria:
-                steps[stepIndex].metadata.branches[branchIndex].conditions,
-              workspace: {
-                id: job.data.account.teams?.[0]?.organization.workspaces?.[0]
-                  .id,
-              },
-              isUpdating: false,
-            });
+        batch++;
 
-            steps[stepIndex].metadata.branches[branchIndex].systemSegment =
-              segment.id;
-
-            await queryRunner.manager.save(Step, steps[stepIndex]);
-
-            const collectionPrefix =
-              this.segmentsService.generateRandomString();
-            const customersInSegment =
-              await this.customersService.getSegmentCustomersFromQuery(
-                segment.inclusionCriteria.query,
-                job.data.account,
-                job.data.session,
-                true,
-                0,
-                collectionPrefix
-              );
-
-            if (!customersInSegment) continue; // The segment definition doesnt have any customers in it...
-            const CUSTOMERS_PER_BATCH = 50000;
-            let batch = 0;
-            const mongoCollection =
-              this.connection.db.collection(customersInSegment);
-            const totalDocuments = await mongoCollection.countDocuments();
-
-            while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
-              const customers = await this.customersService.find(
-                job.data.account,
-                segment.inclusionCriteria,
-                job.data.session,
-                null,
-                batch * CUSTOMERS_PER_BATCH,
-                CUSTOMERS_PER_BATCH,
-                customersInSegment
-              );
-              this.log(
-                `Skip ${
-                  batch * CUSTOMERS_PER_BATCH
-                }, limit: ${CUSTOMERS_PER_BATCH}`,
-                this.handleCreateDynamic.name,
-                job.data.session
-              );
-              batch++;
-
-              await this.segmentCustomersService.addBulk(
-                segment.id,
-                customers.map((document) => {
-                  return document._id.toString();
-                }),
-                job.data.session,
-                job.data.account,
-                client
-              );
-            }
-            try {
-              await this.segmentsService.deleteCollectionsWithPrefix(
-                collectionPrefix
-              );
-            } catch (e) {
-              this.error(
-                e,
-                this.process.name,
-                job.data.session,
-                job.data.account.email
-              );
-            }
-          }
-        }
+        await this.segmentCustomersService.addBulk(
+          job.data.segment.id,
+          customers.map((document) => {
+            return document._id.toString();
+          }),
+          job.data.session,
+          job.data.account,
+          client
+        );
       }
-      await queryRunner.commitTransaction();
-      await this.enrollmentQueue.add('enroll', {
-        account: job.data.account,
-        journey: job.data.journey,
-        session: job.data.session,
+      try {
+        await this.segmentsService.deleteCollectionsWithPrefix(
+          collectionPrefix
+        );
+      } catch (e) {
+        this.error(
+          e,
+          this.process.name,
+          job.data.session,
+          job.data.account.email
+        );
+      }
+      let last = false;
+      queryRunner.manager.query('SELECT pg_advisory_lock(12345)');
+      const journey = await queryRunner.manager.findOne(Journey, {
+        where: { id: job.data.journey.id },
       });
+      if (journey) {
+        journey.completedSystemSegments += 1;
+        await queryRunner.manager.save(journey);
+        if (journey.completedSystemSegments === journey.totalSystemSegments)
+          last = true;
+      }
+      await queryRunner.manager.query('SELECT pg_advisory_unlock(12345)');
+      await queryRunner.commitTransaction();
+      if (last)
+        await this.enrollmentQueue.add('enroll', {
+          account: job.data.account,
+          journey: job.data.journey,
+          session: job.data.session,
+        });
     } catch (err) {
       this.error(
         err,

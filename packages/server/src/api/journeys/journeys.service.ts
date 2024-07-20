@@ -27,7 +27,6 @@ import {
   CustomerDocument,
 } from '../customers/schemas/customer.schema';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { createClient } from '@clickhouse/client';
 import { isUUID } from 'class-validator';
 import mongoose, { ClientSession, Model } from 'mongoose';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -56,7 +55,6 @@ import {
   ElementCondition,
   EventBranch,
   MessageEvent,
-  CommonMultiBranchMetadata,
   PropertyCondition,
   StartStepMetadata,
   StepType,
@@ -85,10 +83,11 @@ import { RedisService } from '@liaoliaots/nestjs-redis';
 import { JourneyChange } from './entities/journey-change.entity';
 import isObjectDeepEqual from '@/utils/isObjectDeepEqual';
 import { JourneyLocation } from './entities/journey-location.entity';
-import { format, eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
+import { eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
 import { CacheService } from '@/common/services/cache.service';
 import { EntityComputedFieldsHelper } from '@/common/helper/entityComputedFields.helper';
 import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
+import { Segment, SegmentType } from '../segments/entities/segment.entity';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -225,17 +224,6 @@ export interface ActivityEvent {
 
 @Injectable()
 export class JourneysService {
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
-
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -254,6 +242,8 @@ export class JourneysService {
     @Inject(RedisService) private redisService: RedisService,
     @InjectQueue('{segment_update}')
     private readonly segmentUpdateQueue: Queue,
+    @InjectQueue('{enrollment}')
+    private readonly enrollmentQueue: Queue,
     @Inject(CacheService) private cacheService: CacheService
   ) {}
 
@@ -1840,6 +1830,56 @@ export class JourneysService {
       if (!alg.isAcyclic(graph))
         throw new Error('Flow has infinite loops, cannot start.');
 
+      let jobs = [];
+      const multiSplitSteps: Step[] =
+        await this.stepsService.transactionalfindAllByTypeInJourney(
+          account,
+          StepType.MULTISPLIT,
+          journey.id,
+          queryRunner,
+          session
+        );
+      if (multiSplitSteps.length) {
+        for (
+          let stepIndex = 0;
+          stepIndex < multiSplitSteps.length;
+          stepIndex++
+        ) {
+          for (
+            let branchIndex = 0;
+            branchIndex < multiSplitSteps[stepIndex].metadata.branches.length;
+            branchIndex++
+          ) {
+            const segment = await queryRunner.manager.save(Segment, {
+              type: SegmentType.SYSTEM,
+              name: '__SYSTEM__',
+              inclusionCriteria:
+                multiSplitSteps[stepIndex].metadata.branches[branchIndex]
+                  .conditions,
+              workspace: {
+                id: account.teams?.[0]?.organization.workspaces?.[0].id,
+              },
+              isUpdating: false,
+            });
+            multiSplitSteps[stepIndex].metadata.branches[
+              branchIndex
+            ].systemSegment = segment.id;
+
+            await queryRunner.manager.save(Step, multiSplitSteps[stepIndex]);
+
+            jobs.push({
+              name: 'createSystem',
+              data: {
+                account,
+                journey,
+                session,
+                segment,
+              },
+            });
+          }
+        }
+      }
+
       if (
         journey.journeyEntrySettings.entryTiming.type ===
         EntryTiming.WhenPublished
@@ -1851,6 +1891,7 @@ export class JourneysService {
           isActive: true,
           isEnrolling: true,
           startedAt: new Date(Date.now()),
+          totalSystemSegments: jobs.length,
         });
       } else {
         journey = await queryRunner.manager.save(Journey, {
@@ -1858,16 +1899,30 @@ export class JourneysService {
           isEnrolling: true,
           isActive: true,
           startedAt: new Date(Date.now()),
+          totalSystemSegments: jobs.length,
         });
       }
 
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
-      await this.segmentUpdateQueue.add('createSystem', {
-        account,
-        journey,
-        session,
-      });
+      if (jobs.length)
+        await this.segmentUpdateQueue.addBulk(
+          jobs.map((job) => {
+            return {
+              name: 'createSystem',
+              data: {
+                ...job.data,
+                journey,
+              },
+            };
+          })
+        );
+      else
+        await this.enrollmentQueue.add('enroll', {
+          account,
+          journey,
+          session,
+        });
     } catch (e) {
       err = e;
       this.error(e, this.start.name, session, account.email);

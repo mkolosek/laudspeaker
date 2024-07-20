@@ -67,6 +67,9 @@ import { CacheService } from '@/common/services/cache.service';
     BullModule.registerQueue({
       name: '{segment_update}',
     }),
+    BullModule.registerQueue({
+      name: '{enrollment}',
+    }),
     AudiencesModule,
     forwardRef(() => CustomersModule),
     forwardRef(() => StepsModule),

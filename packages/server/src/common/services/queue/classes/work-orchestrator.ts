@@ -91,8 +91,8 @@ export class WorkOrchestrator {
     } else {
 
       // TODO: move to failed queue if count > threthold
-      msg.properties.headers['x-delivery-count'] = currentRedeliveryCount + 1;
-      channel.nack(msg);
+      // msg.properties.headers['x-delivery-count'] = currentRedeliveryCount + 1;
+      channel.ack(msg);
     }
   }
 }

@@ -88,8 +88,10 @@ export class WorkOrchestrator {
 
       // message will be requeued
       channel.nack(msg);
+    } else if (queue == QueueType.MESSAGE_STEP) {
+      // no retries for message step
+      channel.ack(msg);
     } else {
-
       // TODO: move to failed queue if count > threthold
       // msg.properties.headers['x-delivery-count'] = currentRedeliveryCount + 1;
       channel.nack(msg);

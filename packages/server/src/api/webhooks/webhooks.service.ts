@@ -473,11 +473,11 @@ export class WebhooksService {
             };
           });
 
-          await Producer.addBulk(
-            QueueType.EVENTS_PRE,
-            jobsData,
-            ProviderType.MESSAGE
-          );
+          // await Producer.addBulk(
+          //   QueueType.EVENTS_PRE,
+          //   jobsData,
+          //   ProviderType.MESSAGE
+          // );
 
           await this.clickhouseClient.insert({
             table: 'message_status',

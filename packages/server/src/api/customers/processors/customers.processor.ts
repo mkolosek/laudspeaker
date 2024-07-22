@@ -1,4 +1,3 @@
-import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { KEYS_TO_SKIP } from '@/utils/customer-key-name-validator';
@@ -14,6 +13,10 @@ import mongoose from 'mongoose';
 import { Customer, CustomerDocument } from '../schemas/customer.schema';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { ProviderType } from '../../events/processors/events.preprocessor';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 const containsUnskippedKeys = (updateDescription) => {
   // Combine keys from updatedFields, removedFields, and the fields of truncatedArrays
@@ -70,26 +73,8 @@ const copyMessageWithFilteredUpdateDescription = (message) => {
 };
 
 @Injectable()
-@Processor('{customer_change}', {
-  stalledInterval: process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_STALLED_INTERVAL
-    : 30000,
-  removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.CUSTOMER_CHANGE_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
-    ? +process.env.CUSTOMER_CHANGE_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class CustomerChangeProcessor extends WorkerHost {
+@Processor('customer_change')
+export class CustomerChangeProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
@@ -97,8 +82,6 @@ export class CustomerChangeProcessor extends WorkerHost {
     private readonly journeysService: JourneysService,
     private readonly accountsService: AccountsService,
     private readonly segmentsService: SegmentsService,
-    @InjectQueue('{events_pre}')
-    private readonly eventPreprocessorQueue: Queue,
     @InjectConnection() private readonly connection: mongoose.Connection,
     private dataSource: DataSource
   ) {
@@ -230,11 +213,11 @@ export class CustomerChangeProcessor extends WorkerHost {
             clientSession
           );
           if (message.operationType === 'update')
-            await this.eventPreprocessorQueue.add(ProviderType.WU_ATTRIBUTE, {
+            await Producer.add(QueueType.EVENTS_PRE, {
               account: account,
               session: job.data.session,
               message: copyMessageWithFilteredUpdateDescription(message),
-            });
+            }, ProviderType.WU_ATTRIBUTE);
           break;
         case 'delete': {
           // TODO_JH: remove customerID from all steps also

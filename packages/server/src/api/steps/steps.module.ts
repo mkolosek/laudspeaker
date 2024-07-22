@@ -2,7 +2,6 @@ import { Module, forwardRef } from '@nestjs/common';
 import { StepsService } from './steps.service';
 import { StepsController } from './steps.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BullModule } from '@nestjs/bullmq';
 import { Step } from './entities/step.entity';
 import { JobsService } from '../jobs/jobs.service';
 import { Template } from '../templates/entities/template.entity';
@@ -20,7 +19,6 @@ import { TemplatesModule } from '../templates/templates.module';
 import { Account } from '../accounts/entities/accounts.entity';
 import { AccountsModule } from '../accounts/accounts.module';
 import { EventsModule } from '../events/events.module';
-import { TransitionProcessor } from './processors/transition.processor';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { ModalsModule } from '../modals/modals.module';
 import { WebsocketsModule } from '@/websockets/websockets.module';
@@ -45,7 +43,6 @@ import { StartStepProcessor } from './processors/start.step.processor';
 import { TimeDelayStepProcessor } from './processors/time.delay.step.processor';
 import { TimeWindowStepProcessor } from './processors/time.window.step.processor';
 import { WaitUntilStepProcessor } from './processors/wait.until.step.processor';
-import { QueueService } from '@/common/services/queue.service';
 import { SegmentsModule } from '../segments/segments.module';
 
 function getProvidersList() {
@@ -55,13 +52,11 @@ function getProvidersList() {
     RedlockService,
     JourneyLocationsService,
     CacheService,
-    QueueService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
     providerList = [
       ...providerList,
-      TransitionProcessor,
       StartProcessor,
       EnrollmentProcessor,
       ExitStepProcessor,
@@ -97,42 +92,6 @@ function getProvidersList() {
     MongooseModule.forFeature([
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
-    BullModule.registerQueue({
-      name: '{transition}',
-    }),
-    BullModule.registerQueue({
-      name: '{webhooks}',
-    }),
-    BullModule.registerQueue({
-      name: '{start}',
-    }),
-    BullModule.registerQueue({
-      name: '{start.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{wait.until.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.window.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{exit.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{jump.to.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{message.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.delay.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{multisplit.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{experiment.step}',
-    }),
     forwardRef(() => CustomersModule),
     forwardRef(() => WebhooksModule),
     forwardRef(() => TemplatesModule),

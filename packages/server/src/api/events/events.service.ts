@@ -20,12 +20,6 @@ import { PosthogBatchEventDto } from './dto/posthog-batch-event.dto';
 import { EventDto } from './dto/event.dto';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { StatusJobDto } from './dto/status-event.dto';
-import {
-  Processor,
-  WorkerHost,
-  OnWorkerEvent,
-  InjectQueue,
-} from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Job, Queue, UnrecoverableError } from 'bullmq';
@@ -77,6 +71,8 @@ import { cleanTagsForSending } from '@/shared/utils/helpers';
 import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/node';
 import { FindType } from '../customers/enums/FindType.enum';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
 export class EventsService {
@@ -92,11 +88,6 @@ export class EventsService {
     public CustomerKeysModel: Model<CustomerKeysDocument>,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{message}') private readonly messageQueue: Queue,
-    @InjectQueue('{events}') private readonly eventQueue: Queue,
-    @InjectQueue('{events_pre}')
-    private readonly eventPreprocessorQueue: Queue,
-    @InjectQueue('{slack}') private readonly slackQueue: Queue,
     @InjectModel(Event.name)
     private EventModel: Model<EventDocument>,
     @InjectModel(PosthogEvent.name)
@@ -108,7 +99,6 @@ export class EventsService {
     @InjectModel(PosthogEventType.name)
     private PosthogEventTypeModel: Model<PosthogEventTypeDocument>,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('{webhooks}') private readonly webhooksQueue: Queue,
     @Inject(forwardRef(() => JourneysService))
     private readonly journeysService: JourneysService
   ) {
@@ -271,21 +261,22 @@ export class EventsService {
   }
 
   async getJobStatus(body: StatusJobDto, type: JobTypes, session: string) {
-    const jobQueues = {
-      [JobTypes.email]: this.messageQueue,
-      [JobTypes.slack]: this.slackQueue,
-      [JobTypes.events]: this.eventQueue,
-      [JobTypes.webhooks]: this.webhooksQueue,
-    };
+    throw Error("Deprecated")
+    // const jobQueues = {
+    //   [JobTypes.email]: this.messageQueue,
+    //   [JobTypes.slack]: this.slackQueue,
+    //   [JobTypes.events]: this.eventQueue,
+    //   [JobTypes.webhooks]: this.webhooksQueue,
+    // };
 
-    try {
-      const job = await jobQueues[type].getJob(body.jobId);
-      const state = await job.getState();
-      return state;
-    } catch (err) {
-      this.logger.error(`Error getting ${type} job status: ` + err);
-      throw new HttpException(`Error getting ${type} job status`, 503);
-    }
+    // try {
+    //   const job = await jobQueues[type].getJob(body.jobId);
+    //   const state = await job.getState();
+    //   return state;
+    // } catch (err) {
+    //   this.logger.error(`Error getting ${type} job status: ` + err);
+    //   throw new HttpException(`Error getting ${type} job status`, 503);
+    // }
   }
 
   async posthogPayload(
@@ -315,18 +306,11 @@ export class EventsService {
         numEvent < chronologicalEvents.length;
         numEvent++
       ) {
-        await this.eventPreprocessorQueue.add(
-          'posthog',
-          {
-            account: account,
-            event: eventDto,
-            session: session,
-          },
-          {
-            attempts: 10,
-            backoff: { delay: 1000, type: 'exponential' },
-          }
-        );
+        await Producer.add(QueueType.EVENTS_PRE, {
+          account: account,
+          event: eventDto,
+          session: session,
+        }, 'posthog');
       }
     } catch (e) {
       await queryRunner.rollbackTransaction();
@@ -342,12 +326,14 @@ export class EventsService {
     eventDto: EventDto,
     session: string
   ) {
-    await this.eventPreprocessorQueue.add(ProviderType.LAUDSPEAKER, {
+    const jobData = {
       owner: auth.account,
       workspace: auth.workspace,
       event: eventDto,
       session: session,
-    });
+    };
+
+    await Producer.add(QueueType.EVENTS_PRE, jobData, ProviderType.LAUDSPEAKER)
   }
 
   async getOrUpdateAttributes(resourceId: string, session: string) {

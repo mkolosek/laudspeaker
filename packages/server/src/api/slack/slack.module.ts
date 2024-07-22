@@ -1,5 +1,4 @@
 import { forwardRef, Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
 import { SlackProcessor } from './slack.processor';
 import { SlackController } from './slack.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -33,18 +32,6 @@ function getProvidersList() {
 
 @Module({
   imports: [
-    BullModule.registerQueue({
-      name: '{slack}',
-    }),
-    BullModule.registerQueue({
-      name: '{message}',
-    }),
-    BullModule.registerQueue({
-      name: '{customers}',
-    }),
-    BullModule.registerQueue({
-      name: '{events_pre}',
-    }),
     TypeOrmModule.forFeature([
       Account,
       Audience,

@@ -3,9 +3,6 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
@@ -25,28 +22,12 @@ import { StepsService } from '../steps.service';
 import { Journey } from '@/api/journeys/entities/journey.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 
 @Injectable()
-@Processor('{exit.step}', {
-  stalledInterval: process.env.EXIT_STEP_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.EXIT_STEP_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.EXIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.EXIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.EXIT_STEP_PROCESSOR_CONCURRENCY
-    ? +process.env.EXIT_STEP_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class ExitStepProcessor extends WorkerHost {
+@Processor('exit.step')
+export class ExitStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,

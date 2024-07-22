@@ -3,9 +3,6 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
@@ -22,36 +19,20 @@ import { JourneysService } from '../journeys.service';
 import { Step } from '../../steps/entities/step.entity';
 import { StepType } from '../../steps/types/step.interface';
 import { StepsService } from '../../steps/steps.service';
-import { QueueService } from '@/common/services/queue.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 const BATCH_SIZE = +process.env.START_BATCH_SIZE;
 
 @Injectable()
-@Processor('{start}', {
-  stalledInterval: process.env.START_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.START_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.START_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.START_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.START_PROCESSOR_CONCURRENCY
-    ? +process.env.START_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class StartProcessor extends WorkerHost {
+@Processor('start')
+export class StartProcessor extends ProcessorBase {
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start}') private readonly startQueue: Queue,
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
@@ -60,7 +41,6 @@ export class StartProcessor extends WorkerHost {
     @Inject(JourneysService)
     private readonly journeysService: JourneysService,
     @Inject(StepsService) private stepsService: StepsService,
-    @Inject(QueueService) private queueService: QueueService
   ) {
     super();
   }
@@ -196,7 +176,7 @@ export class StartProcessor extends WorkerHost {
         );
         await queryRunner.commitTransaction();
         if (jobsData && jobsData.length)
-          await this.queueService.addBulk(StepType.START, jobsData);
+          await Producer.addBulk(QueueType.START_STEP, jobsData);
       } catch (e) {
         this.error(e, this.process.name, job.data.session, job.data.owner.id);
         await queryRunner.rollbackTransaction();
@@ -231,9 +211,8 @@ export class StartProcessor extends WorkerHost {
         },
       ];
 
-      await this.queueService.addBulkToQueue(
-        this.startQueue,
-        'start',
+      await Producer.addBulk(
+        QueueType.START,
         jobsData
       );
     }

@@ -1,5 +1,4 @@
 /* eslint-disable no-case-declarations */
-import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, MetricsTime } from 'bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
@@ -22,28 +21,12 @@ import { TemplatesService } from '../templates/templates.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Repository } from 'typeorm';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 
-@Processor('{webhooks}', {
-  stalledInterval: process.env.WEBHOOKS_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.WEBHOOKS_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.WEBHOOKS_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.WEBHOOKS_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.WEBHOOKS_PROCESSOR_CONCURRENCY
-    ? +process.env.WEBHOOKS_PROCESSOR_CONCURRENCY
-    : 1,
-})
+@Processor('webhooks')
 @Injectable()
-export class WebhooksProcessor extends WorkerHost {
+export class WebhooksProcessor extends ProcessorBase {
   private tagEngine = new Liquid();
 
   constructor(

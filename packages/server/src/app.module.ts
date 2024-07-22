@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TypeOrmConfigService } from './shared/typeorm/typeorm.service';
 import { ApiModule } from './api/api.module';
 import { WinstonModule } from 'nest-winston';
-import { BullModule } from '@nestjs/bullmq';
 import * as winston from 'winston';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthMiddleware } from './api/auth/middleware/auth.middleware';
@@ -62,7 +61,7 @@ import { OrganizationInvites } from './api/organizations/entities/organization-i
 import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HealthCheckService } from './app.healthcheck.service';
-import { QueueService } from '@/common/services/queue.service';
+import { QueueModule } from '@/common/services/queue/queue.module';
 
 const sensitiveKeys = [
   /cookie/i,
@@ -103,7 +102,6 @@ function getProvidersList() {
     RedlockService,
     JourneyLocationsService,
     HealthCheckService,
-    QueueService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'CRON') {
@@ -192,16 +190,9 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
         }),
       }),
     }),
-    BullModule.forRoot({
+    QueueModule.forRoot({
       connection: {
-        host: process.env.REDIS_HOST ?? 'localhost',
-        port: parseInt(process.env.REDIS_PORT),
-        password: process.env.REDIS_PASSWORD,
-        retryStrategy: (times: number) => {
-          return Math.max(Math.min(Math.exp(times), 20000), 1000);
-        },
-        maxRetriesPerRequest: null,
-        enableOfflineQueue: true,
+        uri: process.env.RMQ_CONNECTION_URI ?? 'amqp://localhost',
       },
     }),
     // MorganLoggerModule,
@@ -247,63 +238,6 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       JourneyLocation,
       OrganizationInvites,
     ]),
-    BullModule.registerQueue({
-      name: '{integrations}',
-    }),
-    BullModule.registerQueue({
-      name: '{events}',
-    }),
-    BullModule.registerQueue({
-      name: '{customers}',
-    }),
-    BullModule.registerQueue({
-      name: '{message}',
-    }),
-    BullModule.registerQueue({
-      name: '{slack}',
-    }),
-    BullModule.registerQueue({
-      name: '{transition}',
-    }),
-    BullModule.registerQueue({
-      name: '{imports}',
-    }),
-    BullModule.registerQueue({
-      name: '{start}',
-    }),
-    BullModule.registerQueue({
-      name: '{start.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{wait.until.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{message.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{jump.to.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.delay.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.window.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{multisplit.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{experiment.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{exit.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{customer_change}',
-    }),
-    BullModule.registerQueue({
-      name: '{segment_update}',
-    }),
     IntegrationsModule,
     CustomersModule,
     TemplatesModule,

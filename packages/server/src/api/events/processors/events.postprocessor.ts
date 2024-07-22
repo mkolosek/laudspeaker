@@ -1,4 +1,3 @@
-import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -13,28 +12,12 @@ import { CustomerDocument } from '../../customers/schemas/customer.schema';
 import { Account } from '../../accounts/entities/accounts.entity';
 import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import * as Sentry from '@sentry/node';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 
 @Injectable()
-@Processor('{events_post}', {
-  stalledInterval: process.env.EVENTS_POST_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.EVENTS_POST_PROCESSOR_STALLED_INTERVAL
-    : 30000,
-  removeOnComplete: {
-    age: process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.EVENTS_POST_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.EVENTS_POST_PROCESSOR_CONCURRENCY
-    ? +process.env.EVENTS_POST_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class EventsPostProcessor extends WorkerHost {
+@Processor('events_post')
+export class EventsPostProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,

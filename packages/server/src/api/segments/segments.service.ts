@@ -26,9 +26,10 @@ import e, { query } from 'express';
 import { CountSegmentUsersSizeDTO } from './dto/size-count.dto';
 import { randomUUID } from 'crypto';
 import { Filter, Document } from 'mongodb';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as Sentry from '@sentry/node';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
 export class SegmentsService {
@@ -44,8 +45,6 @@ export class SegmentsService {
     private workflowsService: WorkflowsService,
     private readonly audiencesHelper: AudiencesHelper,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('{segment_update}')
-    private readonly segmentUpdateQueue: Queue
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -433,11 +432,11 @@ export class SegmentsService {
         isUpdating: true,
       });
       if (segment.type === SegmentType.AUTOMATIC) {
-        await this.segmentUpdateQueue.add('createDynamic', {
+        await Producer.add(QueueType.SEGMENT_UPDATE, {
           segment,
           createSegmentDTO,
           account,
-        });
+        }, 'createDynamic');
       }
       await queryRunner.commitTransaction();
       return segment;
@@ -565,13 +564,13 @@ export class SegmentsService {
       { ...updateSegmentDTO, workspace: { id: workspace.id }, isUpdating: true }
     );
 
-    await this.segmentUpdateQueue.add('updateDynamic', {
+    await Producer.add(QueueType.SEGMENT_UPDATE, {
       account,
       id,
       updateSegmentDTO,
       session,
       workspace,
-    });
+    }, 'updateDynamic');
   }
 
   public async delete(account: Account, id: string, session: string) {
@@ -1139,12 +1138,12 @@ export class SegmentsService {
     if (segment.type !== SegmentType.MANUAL)
       throw new BadRequestException("This segment isn't manual");
 
-    await this.segmentUpdateQueue.add('updateManual', {
+    await Producer.add(QueueType.SEGMENT_UPDATE, {
       account,
       segment,
       csvFile,
       session,
-    });
+    }, 'updateManual');
 
     return;
   }

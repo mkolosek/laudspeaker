@@ -30,7 +30,6 @@ import {
   CustomerKeys,
   CustomerKeysDocument,
 } from './schemas/customer-keys.schema';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { createClient, Row } from '@clickhouse/client';
@@ -92,6 +91,8 @@ import { CacheService } from '@/common/services/cache.service';
 import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface';
 import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface';
 import { FindType } from './enums/FindType.enum';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 export type Correlation = {
   cust: CustomerDocument;
@@ -250,8 +251,6 @@ export class CustomersService {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{customers}') private readonly customersQueue: Queue,
-    @InjectQueue('{imports}') private readonly importsQueue: Queue,
     @InjectModel(Customer.name) public CustomerModel: Model<CustomerDocument>,
     @InjectModel(CustomerKeys.name)
     public CustomerKeysModel: Model<CustomerKeysDocument>,
@@ -881,11 +880,11 @@ export class CustomersService {
     }
     const authString = 'Bearer ' + phAuth;
     try {
-      await this.customersQueue.add('sync', {
+      await Producer.add(QueueType.CUSTOMERS, {
         url: posthogUrl,
         auth: authString,
         account: account,
-      });
+      }, 'sync');
     } catch (e) {
       this.error(e, this.ingestPosthogPersons.name, session);
     }
@@ -6529,7 +6528,7 @@ export class CustomersService {
         segmentId = data.id;
       }
 
-      await this.importsQueue.add('import', {
+      await Producer.add(QueueType.IMPORTS, {
         fileData,
         clearedMapping,
         account,
@@ -6537,7 +6536,7 @@ export class CustomersService {
         passedPK,
         session,
         segmentId,
-      });
+      }, 'import');
 
       return;
     } catch (error) {

@@ -3,9 +3,6 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
@@ -18,28 +15,24 @@ import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
 import { CustomersService } from '@/api/customers/customers.service';
 import { JourneysService } from '@/api/journeys/journeys.service';
-import { QueueService } from '@/common/services/queue.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@Processor('{enrollment}', {
-  stalledInterval: process.env.ENROLLMENT_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.ENROLLMENT_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: { count: 100 },
-})
-export class EnrollmentProcessor extends WorkerHost {
+@Processor('enrollment')
+export class EnrollmentProcessor extends ProcessorBase {
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(StepsService)
     private readonly stepsService: StepsService,
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
     @Inject(JourneysService)
     private journeyService: JourneysService,
-    @Inject(QueueService) private queueService: QueueService
   ) {
     super();
   }
@@ -176,9 +169,8 @@ export class EnrollmentProcessor extends WorkerHost {
       await queryRunner.commitTransaction();
 
       if (triggerStartTasks) {
-        await this.queueService.addToQueue(
-          this.startQueue,
-          'start',
+        await Producer.add(
+          QueueType.START,
           triggerStartTasks.jobData
         );
       }

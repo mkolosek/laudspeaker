@@ -184,6 +184,19 @@ services:
     command:
       - "environment"
 
+  rabbitmq:
+    image: rabbitmq:management
+    hostname: rabbitmq
+    command:
+      - rabbitmq-server
+    ports:
+      - "5672:5672"
+      - "1883:1883"
+      - "15672:15672"
+    container_name: rabbitmq
+    networks:
+      - laudspeaker_default
+
   s3:
     image: quay.io/minio/minio
     command: "server /data --console-address :9123"
@@ -275,9 +288,6 @@ services:
 
   s3-createbuckets:
     image: minio/mc
-    profiles:
-      - "testing"
-      - gui
     depends_on:
       s3:
         condition: service_healthy

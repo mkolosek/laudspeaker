@@ -1,4 +1,3 @@
-import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -27,9 +26,6 @@ function getProvidersList() {
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
     ]),
-    BullModule.registerQueue({
-      name: '{integrations}',
-    }),
   ],
   controllers: [IntegrationsController],
   providers: getProvidersList(),

@@ -1,7 +1,4 @@
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue, UnrecoverableError } from 'bullmq';
@@ -32,6 +29,10 @@ import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import { EventsService } from '../events.service';
 import { CacheService } from '../../../common/services/cache.service';
 import { FindType } from '../../customers/enums/FindType.enum';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 export enum ProviderType {
   LAUDSPEAKER = 'laudspeaker',
@@ -48,26 +49,8 @@ export enum ProviderType {
  * event database.
  */
 @Injectable()
-@Processor('{events_pre}', {
-  stalledInterval: process.env.EVENTS_PRE_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.EVENTS_PRE_PROCESSOR_STALLED_INTERVAL
-    : 30000,
-  removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.EVENTS_PRE_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.EVENTS_PRE_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.EVENTS_PRE_PROCESSOR_CONCURRENCY
-    ? +process.env.EVENTS_PRE_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class EventsPreProcessor extends WorkerHost {
+@Processor('events_pre')
+export class EventsPreProcessor extends ProcessorBase {
   private providerMap: Record<
     ProviderType,
     (job: Job<any, any, string>) => Promise<void>
@@ -87,9 +70,6 @@ export class EventsPreProcessor extends WorkerHost {
     @InjectModel(Event.name)
     private eventModel: Model<EventDocument>,
     @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
-    @InjectQueue('{events}') private readonly eventsQueue: Queue,
-    @InjectQueue('{events_post}')
-    private readonly eventsPostQueue: Queue,
     @InjectRepository(Journey)
     private readonly journeysRepository: Repository<Journey>,
     @Inject(CacheService) private cacheService: CacheService
@@ -250,34 +230,29 @@ export class EventsPreProcessor extends WorkerHost {
       // Always add jobs after committing transactions, otherwise there could be race conditions
       let eventJobs = journeys.map((journey) => ({
         //to do add here modified
-        name: EventType.EVENT,
-        data: {
-          account: job.data.owner,
-          //workspace: job.data.workspace,
-          event: job.data.event,
-          journey: {
-            ...journey,
-            visualLayout: {
-              edges: [],
-              nodes: [],
-            },
-            inclusionCriteria: {},
+        account: job.data.owner,
+        //workspace: job.data.workspace,
+        event: job.data.event,
+        journey: {
+          ...journey,
+          visualLayout: {
+            edges: [],
+            nodes: [],
           },
-          customer: customer,
-          session: job.data.session,
+          inclusionCriteria: {},
         },
-        opts: {
-          attempts: Number.MAX_SAFE_INTEGER,
-          backoff: { type: 'fixed', delay: 1000 },
-        },
+        customer: customer,
+        session: job.data.session,
       }));
 
-      await this.eventsQueue.addBulk(eventJobs);
-      await this.eventsPostQueue.add(job.data.event.event, {
+      await Producer.addBulk(QueueType.EVENTS,
+        eventJobs,
+        EventType.EVENT);
+      await Producer.add(QueueType.EVENTS_POST, {
         ...job.data,
         workspace: undefined,
         customer,
-      });
+      }, job.data.event.event);
     } catch (e) {
       this.error(
         e,
@@ -331,19 +306,12 @@ export class EventsPreProcessor extends WorkerHost {
         },
       });
       for (let i = 0; i < journeys.length; i++) {
-        await this.eventsQueue.add(
-          EventType.MESSAGE,
-          {
+        await Producer.add(QueueType.EVENTS, {
             workspaceId: job.data.workspaceId,
             message: job.data.message,
             customer: job.data.customer,
             journeyID: journeys[i].id,
-          },
-          {
-            attempts: Number.MAX_SAFE_INTEGER,
-            backoff: { type: 'fixed', delay: 1000 },
-          }
-        );
+          }, EventType.MESSAGE);
       }
 
       await transactionSession.commitTransaction();
@@ -396,19 +364,13 @@ export class EventsPreProcessor extends WorkerHost {
       });
       for (let i = 0; i < journeys.length; i++) {
         if (job.data.message.operationType === 'update') {
-          await this.eventsQueue.add(
-            EventType.ATTRIBUTE,
+          await Producer.add(QueueType.EVENTS,
             {
               accountID: job.data.account.id,
               customer: job.data.message.documentKey._id,
               fields: job.data.message.updateDescription?.updatedFields,
               journeyID: journeys[i].id,
-            },
-            {
-              attempts: Number.MAX_SAFE_INTEGER,
-              backoff: { type: 'fixed', delay: 1000 },
-            }
-          );
+            }, EventType.ATTRIBUTE);
         }
       }
 

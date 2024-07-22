@@ -3,7 +3,6 @@ import { JobsService } from './jobs.service';
 import { JobsController } from './jobs.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Job } from './entities/job.entity';
-import { BullModule } from '@nestjs/bullmq';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Customer, CustomerSchema } from '../customers/schemas/customer.schema';
 import { Audience } from '../audiences/entities/audience.entity';
@@ -18,15 +17,6 @@ import { Workflow } from '../workflows/entities/workflow.entity';
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
     ]),
-    BullModule.registerQueue({
-      name: '{message}',
-    }),
-    BullModule.registerQueue({
-      name: '{slack}',
-    }),
-    BullModule.registerQueue({
-      name: '{customers}',
-    }),
     CustomersModule,
   ],
   providers: [JobsService],

@@ -45,7 +45,6 @@ import { ModalsService } from './api/modals/modals.service';
 import { randomUUID } from 'crypto';
 import { StepsService } from './api/steps/steps.service';
 import { StepType } from './api/steps/types/step.interface';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { JourneysService } from './api/journeys/journeys.service';
 import { RedlockService } from './api/redlock/redlock.service';
@@ -68,7 +67,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Account } from './api/accounts/entities/accounts.entity';
 import * as os from 'os';
 import * as Sentry from '@sentry/node';
-import { QueueService } from '@/common/services/queue.service';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 const BATCH_SIZE = 500;
 
@@ -122,12 +122,9 @@ export class CronService {
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
-    @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(RedlockService)
     private readonly redlockService: RedlockService,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @Inject(QueueService) private queueService: QueueService
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -531,13 +528,15 @@ export class CronService {
           timeBasedJobs
         );
 
-        await this.queueService.addBulk(
-          StepType.WAIT_UNTIL_BRANCH,
+        await Producer.addBulk(
+          QueueType.WAIT_UNTIL_STEP,
           waitUntilJobsData
         );
-        await this.queueService.addBulk(StepType.TIME_DELAY, timeDelayJobsData);
-        await this.queueService.addBulk(
-          StepType.TIME_WINDOW,
+        await Producer.addBulk(
+          QueueType.TIME_DELAY_STEP,
+          timeDelayJobsData);
+        await Producer.addBulk(
+          QueueType.TIME_WINDOW_STEP,
           timeWindowJobsData
         );
       }
@@ -590,7 +589,7 @@ export class CronService {
           session,
           queryRunner
         );
-        const bulkJobs: { name: string; data: any }[] = [];
+        const bulkJobs: any[] = [];
         for (const requeue of requeuedMessages) {
           // THIS MIGHT BE SLOWER THAN WE WANT querying for the customer from mongo.
           // findAndLock only uses customer.id, but the function currently
@@ -607,18 +606,17 @@ export class CronService {
             queryRunner
           );
           await bulkJobs.push({
-            name: StepType.MESSAGE,
-            data: {
-              owner: requeue.workspace?.organization?.owner,
-              journey: requeue.step.journey,
-              step: requeue.step,
-              session,
-              customerID: requeue.customerId,
-            },
+            owner: requeue.workspace?.organization?.owner,
+            journey: requeue.step.journey,
+            step: requeue.step,
+            session,
+            customerID: requeue.customerId,
           });
           await queryRunner.manager.remove(requeue);
         }
-        await this.transitionQueue.addBulk(bulkJobs);
+        await Producer.addBulk(QueueType.MESSAGE_STEP,
+          bulkJobs,
+          StepType.MESSAGE)
         await queryRunner.commitTransaction();
       } catch (e) {
         requeueErr = e;
@@ -1486,9 +1484,8 @@ export class CronService {
           //   await this.connection.dropCollection(collection);
           // }
           if (triggerStartTasks?.jobData)
-            await this.queueService.addToQueue(
-              this.startQueue,
-              'start',
+            await Producer.add(
+              QueueType.START,
               triggerStartTasks.jobData
             );
         } catch (e) {

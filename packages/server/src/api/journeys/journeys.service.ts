@@ -77,7 +77,6 @@ import {
   JourneyEnrollmentType,
 } from './types/additional-journey-settings.interface';
 import { JourneyLocationsService } from './journey-locations.service';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { RedisService } from '@liaoliaots/nestjs-redis';
 import { JourneyChange } from './entities/journey-change.entity';
@@ -87,6 +86,8 @@ import { eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
 import { CacheService } from '@/common/services/cache.service';
 import { EntityComputedFieldsHelper } from '@/common/helper/entityComputedFields.helper';
 import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 import { Segment, SegmentType } from '../segments/entities/segment.entity';
 
 export enum JourneyStatus {
@@ -240,10 +241,6 @@ export class JourneysService {
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(RedisService) private redisService: RedisService,
-    @InjectQueue('{segment_update}')
-    private readonly segmentUpdateQueue: Queue,
-    @InjectQueue('{enrollment}')
-    private readonly enrollmentQueue: Queue,
     @Inject(CacheService) private cacheService: CacheService
   ) {}
 
@@ -1906,19 +1903,15 @@ export class JourneysService {
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
       if (jobs.length)
-        await this.segmentUpdateQueue.addBulk(
+        await Producer.addBulk(QueueType.SEGMENT_UPDATE,
           jobs.map((job) => {
             return {
-              name: 'createSystem',
-              data: {
-                ...job.data,
-                journey,
-              },
+              ...job.data,
+              journey,
             };
-          })
-        );
+          }), 'createSystem');
       else
-        await this.enrollmentQueue.add('enroll', {
+        await Producer.add(QueueType.ENROLLMENT, {
           account,
           journey,
           session,

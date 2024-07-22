@@ -11,6 +11,8 @@ import { KafkaConsumerService } from '../kafka/consumer.service';
 import { CustomersService } from './customers.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
 export class CustomersConsumerService implements OnApplicationBootstrap {
@@ -18,10 +20,6 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     private readonly consumerService: KafkaConsumerService,
-    @InjectQueue('{customer_change}')
-    private readonly customerChangeQueue: Queue,
-    @InjectQueue('{segment_update}')
-    private readonly segmentUpdateQueue: Queue
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -111,10 +109,12 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
         //   : 10; // Set the threshold for maximum waiting jobs
 
         while (true) {
-          const jobCounts = await this.segmentUpdateQueue.getJobCounts(
-            'active'
-          );
-          const waitingJobs = jobCounts.active;
+          // TODO: implement using RMQCountFetcher, or use different logic
+          // const jobCounts = await this.segmentUpdateQueue.getJobCounts(
+          //   'active'
+          // );
+          // const waitingJobs = jobCounts.active;
+          const waitingJobs = 0;
 
           if (waitingJobs === 0) {
             break; // Exit the loop if the number of waiting jobs is below the threshold
@@ -127,7 +127,7 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
           );
           await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
         }
-        await this.customerChangeQueue.add('change', {
+        await Producer.add(QueueType.CUSTOMER_CHANGE, {
           session,
           changeMessage,
         });

@@ -3,9 +3,6 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
@@ -21,29 +18,14 @@ import { Journey } from '@/api/journeys/entities/journey.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
 import { Temporal } from '@js-temporal/polyfill';
-import { QueueService } from '@/common/services/queue.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@Processor('{wait.until.step}', {
-  stalledInterval: process.env.WAIT_UNTIL_STEP_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.WAIT_UNTIL_STEP_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.WAIT_UNTIL_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.WAIT_UNTIL_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.WAIT_UNTIL_STEP_PROCESSOR_CONCURRENCY
-    ? +process.env.WAIT_UNTIL_STEP_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class WaitUntilStepProcessor extends WorkerHost {
+@Processor('wait.until.step')
+export class WaitUntilStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
@@ -51,7 +33,6 @@ export class WaitUntilStepProcessor extends WorkerHost {
     private journeyLocationsService: JourneyLocationsService,
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(CacheService) private cacheService: CacheService,
-    @Inject(QueueService) private queueService: QueueService
   ) {
     super();
   }
@@ -214,7 +195,7 @@ export class WaitUntilStepProcessor extends WorkerHost {
 
             if (nextStep) {
               const nextStepDepth: number =
-                this.queueService.getNextStepDepthFromJob(job);
+                Producer.getNextStepDepthFromJob(job);
 
               if (
                 nextStep.type !== StepType.TIME_DELAY &&
@@ -311,7 +292,7 @@ export class WaitUntilStepProcessor extends WorkerHost {
           );
         }
         if (nextStep && nextJob)
-          await this.queueService.add(nextStep.type, nextJob);
+          await Producer.addByStepType(nextStep.type, nextJob);
       }
     );
   }

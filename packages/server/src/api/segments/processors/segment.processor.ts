@@ -2,10 +2,7 @@ import { Inject, Logger, forwardRef } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
   OnWorkerEvent,
-  InjectQueue,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
@@ -27,28 +24,14 @@ import { Journey } from '../../journeys/entities/journey.entity';
 import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
 import { StepType } from '@/api/steps/types/step.interface';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@Processor('{segment_update}', {
-  stalledInterval: process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
-    ? +process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class SegmentUpdateProcessor extends WorkerHost {
+@Processor('segment_update')
+export class SegmentUpdateProcessor extends ProcessorBase {
   private providerMap = {
     updateDynamic: this.handleUpdateDynamic,
     updateManual: this.handleUpdateManual,
@@ -64,11 +47,6 @@ export class SegmentUpdateProcessor extends WorkerHost {
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('{customer_change}')
-    private readonly customerChangeQueue: Queue,
-    @InjectQueue('{enrollment}')
-    private readonly enrollmentQueue: Queue,
-    @InjectQueue('{imports}') private readonly importsQueue: Queue,
     @Inject(SegmentCustomersService)
     private segmentCustomersService: SegmentCustomersService,
     @InjectRepository(SegmentCustomers)
@@ -170,10 +148,12 @@ export class SegmentUpdateProcessor extends WorkerHost {
     >
   ) {
     while (true) {
-      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
-      const activeJobs = jobCounts.active;
+      // TODO: implement using RMQCountFetcher, or use different logic
+      // const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
 
-      if (jobCounts && jobCounts.active && jobCounts.active > 0) {
+      if (activeJobs > 0) {
         this.warn(
           `Waiting for the customer change queue to clear. Current active jobs: ${activeJobs}`,
           this.process.name,
@@ -259,7 +239,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
       await queryRunner.manager.query('SELECT pg_advisory_unlock(12345)');
       await queryRunner.commitTransaction();
       if (last)
-        await this.enrollmentQueue.add('enroll', {
+        await Producer.add(QueueType.ENROLLMENT, {
           account: job.data.account,
           journey: job.data.journey,
           session: job.data.session,
@@ -290,10 +270,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
     >
   ) {
     let err: any;
-    await this.customerChangeQueue.pause();
+    // await this.customerChangeQueue.pause();
     while (true) {
-      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
-      const activeJobs = jobCounts.active;
+      // const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
 
       if (activeJobs === 0) {
         break; // Exit the loop if the number of waiting jobs is below the threshold
@@ -307,10 +288,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
     }
 
-    await this.importsQueue.pause();
+    // await this.importsQueue.pause();
     while (true) {
-      const jobCounts = await this.importsQueue.getJobCounts('active');
-      const activeJobs = jobCounts.active;
+      // const jobCounts = await this.importsQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
 
       if (activeJobs === 0) {
         break; // Exit the loop if the number of waiting jobs is below the threshold
@@ -400,8 +382,8 @@ export class SegmentUpdateProcessor extends WorkerHost {
       err = e;
     } finally {
       await queryRunner.release();
-      await this.customerChangeQueue.resume();
-      await this.importsQueue.resume();
+      // await this.customerChangeQueue.resume();
+      // await this.importsQueue.resume();
       if (err) throw err;
     }
   }
@@ -420,10 +402,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
     >
   ) {
     let err: any;
-    await this.customerChangeQueue.pause();
+    // await this.customerChangeQueue.pause();
     while (true) {
-      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
-      const activeJobs = jobCounts.active;
+      // const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
 
       if (activeJobs === 0) {
         break; // Exit the loop if the number of waiting jobs is below the threshold
@@ -525,7 +508,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
       err = e;
     } finally {
       await queryRunner.release();
-      await this.customerChangeQueue.resume();
+      // await this.customerChangeQueue.resume();
       if (err) throw err;
     }
   }

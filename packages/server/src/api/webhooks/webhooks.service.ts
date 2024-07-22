@@ -18,7 +18,6 @@ import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import { Step } from '../steps/entities/step.entity';
 import { EventWebhook } from '@sendgrid/eventwebhook';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Webhook } from 'svix';
 import fetch from 'node-fetch'; // Ensure you have node-fetch if you're using Node.js
@@ -30,6 +29,8 @@ import {
 } from '../organizations/entities/organization-plan.entity';
 import * as Sentry from '@sentry/node';
 import Stripe from 'stripe';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 export enum ClickHouseEventProvider {
   MAILGUN = 'mailgun',
@@ -95,8 +96,6 @@ export class WebhooksService {
     private organizationRepository: Repository<Organization>,
     @InjectRepository(OrganizationPlan)
     private organizationPlanRepository: Repository<OrganizationPlan>,
-    @InjectQueue('{events_pre}')
-    private readonly eventPreprocessorQueue: Queue
   ) {
     const session = randomUUID();
     (async () => {
@@ -465,18 +464,19 @@ export class WebhooksService {
       { name: 'WebhooksService.insertMessageStatusToClickhouse' },
       async () => {
         if (clickhouseMessages?.length) {
-          await this.eventPreprocessorQueue.addBulk(
-            clickhouseMessages.map((element) => {
-              return {
-                name: ProviderType.MESSAGE,
-                data: {
-                  workspaceId: element.workspaceId,
-                  message: element,
-                  session: session,
-                  customer: element.customerId,
-                },
-              };
-            })
+          const jobsData = clickhouseMessages.map((element) => {
+            return {
+              workspaceId: element.workspaceId,
+              message: element,
+              session: session,
+              customer: element.customerId,
+            };
+          });
+
+          await Producer.addBulk(
+            QueueType.EVENTS_PRE,
+            jobsData,
+            ProviderType.MESSAGE
           );
 
           await this.clickhouseClient.insert({

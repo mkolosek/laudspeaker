@@ -1,7 +1,4 @@
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue, UnrecoverableError } from 'bullmq';
@@ -29,6 +26,10 @@ import * as Sentry from '@sentry/node';
 import { JourneyLocationsService } from '../../journeys/journey-locations.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CacheService } from '@/common/services/cache.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 export enum EventType {
   EVENT = 'event',
@@ -46,26 +47,8 @@ export enum EventType {
  * enrollment for that customer.
  */
 @Injectable()
-@Processor('{events}', {
-  stalledInterval: process.env.EVENTS_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.EVENTS_PROCESSOR_STALLED_INTERVAL
-    : 30000,
-  removeOnComplete: {
-    age: process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      ? +process.env.STEP_PROCESSOR_REMOVE_ON_COMPLETE_AGE
-      : 0,
-    count: process.env.EVENTS_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.EVENTS_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.EVENTS_PROCESSOR_CONCURRENCY
-    ? +process.env.EVENTS_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class EventsProcessor extends WorkerHost {
+@Processor('events')
+export class EventsProcessor extends ProcessorBase {
   private providerMap: Record<
     EventType,
     (job: Job<any, any, string>) => Promise<void>
@@ -84,8 +67,6 @@ export class EventsProcessor extends WorkerHost {
     private readonly audiencesHelper: AudiencesHelper,
     @Inject(WebsocketGateway)
     private websocketGateway: WebsocketGateway,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @InjectRepository(Step) private readonly stepsRepository: Repository<Step>,
@@ -510,7 +491,7 @@ export class EventsProcessor extends WorkerHost {
         }
       }
       if (stepToQueue) {
-        await this.waitUntilStepQueue.add(stepToQueue.type, {
+        await Producer.add(QueueType.WAIT_UNTIL_STEP, {
           step: stepToQueue,
           branch: branch,
           customer: job.data.customer,
@@ -519,7 +500,7 @@ export class EventsProcessor extends WorkerHost {
           session: job.data.session,
           journey: job.data.journey,
           event: job.data.event.event,
-        });
+        }, stepToQueue.type);
       } else {
         await this.journeyLocationsService.unlock(location, location.step);
         this.warn(

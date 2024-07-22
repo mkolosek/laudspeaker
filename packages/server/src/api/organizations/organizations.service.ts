@@ -1,4 +1,3 @@
-import { InjectQueue } from '@nestjs/bullmq';
 import {
   BadRequestException,
   HttpException,
@@ -28,6 +27,8 @@ import {
   OrganizationPlan,
 } from './entities/organization-plan.entity';
 import { createClient } from '@clickhouse/client';
+import { QueueType } from '@/common/services/queue/types/queue';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
 export class OrganizationService {
@@ -58,7 +59,6 @@ export class OrganizationService {
     public organizationTeamRepository: Repository<OrganizationTeam>,
     @InjectRepository(Account)
     public accountRepository: Repository<Account>,
-    @InjectQueue('{message}') private readonly messageQueue: Queue,
     @Inject(AuthHelper)
     public readonly authHelper: AuthHelper
   ) {}
@@ -326,7 +326,7 @@ export class OrganizationService {
       const inviteLink = `${process.env.FRONTEND_URL}/confirm-invite/${createdInvite.id}`;
 
       if (process.env.EMAIL_VERIFICATION_PROVIDER === 'gmail') {
-        await this.messageQueue.add('email', {
+        await Producer.add(QueueType.MESSAGE, {
           eventProvider: 'gmail',
           key: process.env.GMAIL_APP_CRED,
           from: 'Laudspeaker',
@@ -335,9 +335,9 @@ export class OrganizationService {
           subject: `You have been invited to organization: ${team.organization.companyName}`,
           plainText: 'Paste the following link into your browser:' + inviteLink,
           text: `Paste the following link into your browser: <a href="${inviteLink}">${inviteLink}</a>`,
-        });
+        }, 'email');
       } else if (process.env.EMAIL_VERIFICATION_PROVIDER === 'mailgun') {
-        await this.messageQueue.add('email', {
+        await Producer.add(QueueType.MESSAGE, {
           key: process.env.MAILGUN_API_KEY,
           from: 'Laudspeaker',
           domain: process.env.MAILGUN_DOMAIN,
@@ -346,10 +346,10 @@ export class OrganizationService {
           subject: `You have been invited to organization: ${team.organization.companyName}`,
 
           text: `Link: <a href="${inviteLink}">${inviteLink}</a>`,
-        });
+        }, 'email');
       } else {
         //default is mailgun right now
-        await this.messageQueue.add('email', {
+        await Producer.add(QueueType.MESSAGE, {
           key: process.env.MAILGUN_API_KEY,
           from: 'Laudspeaker',
           domain: process.env.MAILGUN_DOMAIN,
@@ -357,7 +357,7 @@ export class OrganizationService {
           to: body.email,
           subject: `You have been invited to organization: ${team.organization.companyName}`,
           text: `Link: <a href="${inviteLink}">${inviteLink}</a>`,
-        });
+        }, 'email');
       }
       await queryRunner.commitTransaction();
     } catch (error) {

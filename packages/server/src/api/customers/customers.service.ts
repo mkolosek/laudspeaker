@@ -91,7 +91,7 @@ import { CacheService } from '@/common/services/cache.service';
 import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface';
 import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface';
 import { FindType } from './enums/FindType.enum';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 export type Correlation = {

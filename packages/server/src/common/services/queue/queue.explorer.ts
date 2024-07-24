@@ -1,12 +1,16 @@
 import { getQueueToken, NO_QUEUE_FOUND } from '@nestjs/bull-shared';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy
+} from '@nestjs/common';
 import {
   createContextId,
   DiscoveryService,
   ModuleRef,
   Reflector,
 } from '@nestjs/core';
-import { Injector } from '@nestjs/core/injector/injector';
 import { InstanceWrapper } from '@nestjs/core/injector/instance-wrapper';
 import { Module } from '@nestjs/core/injector/module';
 import { PROCESSOR_METADATA } from './queue.constants';
@@ -18,8 +22,8 @@ import { Producer } from './classes/producer';
 import { QueueManager } from './classes/queue-manager';
 
 @Injectable()
-export class QueueExplorer implements OnModuleInit {
-  private readonly injector = new Injector();
+export class QueueExplorer implements 
+  OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly discoveryService: DiscoveryService,
@@ -28,6 +32,7 @@ export class QueueExplorer implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     // create all queues
+    // Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10000);
     await QueueManager.init();
 
     await this.initProducer();
@@ -35,6 +40,13 @@ export class QueueExplorer implements OnModuleInit {
     if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
       await this.initWorkers();
     }
+  }
+
+  async onModuleDestroy() {
+    Promise.all([
+      QueueManager.close(),
+      Producer.close()
+    ]);
   }
 
   private async initWorkers() {

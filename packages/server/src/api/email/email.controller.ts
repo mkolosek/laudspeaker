@@ -24,7 +24,7 @@ import * as __ from 'async-dash';
 import { CustomersService } from '../customers/customers.service';
 import { RavenInterceptor } from 'nest-raven';
 import { Resend } from 'resend';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Controller('email')

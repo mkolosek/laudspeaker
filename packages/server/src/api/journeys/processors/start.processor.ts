@@ -21,7 +21,7 @@ import { StepType } from '../../steps/types/step.interface';
 import { StepsService } from '../../steps/steps.service';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 const BATCH_SIZE = +process.env.START_BATCH_SIZE;

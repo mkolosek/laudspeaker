@@ -17,7 +17,7 @@ services:
       - laudspeaker_default
 
   postgres:
-    image: postgres:14.4-alpine
+    image: postgres:16.3-alpine
     hostname: postgres
     container_name: postgres
     environment:

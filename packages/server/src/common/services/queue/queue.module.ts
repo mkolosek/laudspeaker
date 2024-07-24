@@ -5,14 +5,15 @@ import { DiscoveryModule } from '@nestjs/core';
 @Module({})
 export class QueueModule {
   static forRoot(options: Record<string, any>): DynamicModule {
-    // const connection = await this.connect();
-
-    // const queueProviders = createQueueConsumerProviders(optionsArr);
+    const configProvider = {
+      provide: 'RMQ_CONFIG_OPTIONS',
+      useValue: options,
+    };
 
     return {
       module: QueueModule,
       imports: [DiscoveryModule],
-      providers: [QueueExplorer],
+      providers: [configProvider, QueueExplorer],
     };
   }
 }

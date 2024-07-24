@@ -42,7 +42,7 @@ import wait from '../../utils/wait';
 import { ModalsService } from '../modals/modals.service';
 import { WebsocketGateway } from '../../websockets/websocket.gateway';
 import { CacheService } from '@/common/services/cache.service';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()

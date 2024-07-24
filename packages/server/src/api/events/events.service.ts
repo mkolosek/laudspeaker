@@ -71,7 +71,7 @@ import { cleanTagsForSending } from '@/shared/utils/helpers';
 import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/node';
 import { FindType } from '../customers/enums/FindType.enum';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()

@@ -11,7 +11,7 @@ import { KafkaConsumerService } from '../kafka/consumer.service';
 import { CustomersService } from './customers.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()

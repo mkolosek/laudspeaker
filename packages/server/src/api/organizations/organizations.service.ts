@@ -27,7 +27,7 @@ import {
   OrganizationPlan,
 } from './entities/organization-plan.entity';
 import { createClient } from '@clickhouse/client';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()

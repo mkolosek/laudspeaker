@@ -1,8 +1,8 @@
-import { OnApplicationShutdown } from '@nestjs/common';
+import { OnModuleDestroy } from '@nestjs/common';
 import { WorkOrchestrator } from './work-orchestrator';
 
 export abstract class ProcessorBase<T extends WorkOrchestrator = WorkOrchestrator>
-  implements OnApplicationShutdown
+  implements OnModuleDestroy
 {
   private readonly _worker: T | undefined;
 
@@ -18,7 +18,19 @@ export abstract class ProcessorBase<T extends WorkOrchestrator = WorkOrchestrato
 
   abstract process(job: any): Promise<any>;
 
-  onApplicationShutdown(signal?: string) {
+  async onComplete(job: any): Promise<any> {
+    // console.log("COMPLETE");
+  }
+
+  async onFail(job: any, error): Promise<any> {
+    // console.log("FAIL");
+  }
+
+  async onRetry(job: any, error): Promise<any> {
+    // console.log("RETRY");
+  }
+
+  async onModuleDestroy() {
     return this._worker?.close();
   }
 }

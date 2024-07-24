@@ -64,7 +64,7 @@
 // import { CacheService } from '@/common/services/cache.service';
 // import { Processor } from '@/common/services/queue/decorators/processor';
 // import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-// import { QueueType } from '@/common/services/queue/types/queue';
+// import { QueueType } from '@/common/services/queue/types/queue-type';
 // import { Producer } from '@/common/services/queue/classes/producer';
 
 // @Injectable()

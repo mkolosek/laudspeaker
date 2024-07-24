@@ -147,6 +147,9 @@ if (cluster.isPrimary) {
 
     const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
 
+    // Starts listening for shutdown hooks
+    app.enableShutdownHooks();
+    
     app.useLogger(logger);
 
     return app;

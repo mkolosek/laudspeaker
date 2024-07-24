@@ -25,7 +25,7 @@ import { Workspaces } from '../workspaces/entities/workspaces.entity';
 import { OrganizationInvites } from '../organizations/entities/organization-invites.entity';
 import { OrganizationTeam } from '../organizations/entities/organization-team.entity';
 import { randomUUID } from 'node:crypto';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()

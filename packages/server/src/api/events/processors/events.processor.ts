@@ -7,8 +7,6 @@ import { Account } from '../../accounts/entities/accounts.entity';
 import { CustomerDocument } from '../../customers/schemas/customer.schema';
 import { CustomersService } from '../../customers/customers.service';
 import { DataSource, Repository } from 'typeorm';
-import mongoose from 'mongoose';
-import { InjectConnection } from '@nestjs/mongoose';
 import { Step } from '../../steps/entities/step.entity';
 import {
   AnalyticsProviderTypes,
@@ -28,7 +26,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { CacheService } from '@/common/services/cache.service';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 export enum EventType {
@@ -61,11 +59,10 @@ export class EventsProcessor extends ProcessorBase {
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     private dataSource: DataSource,
-    @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(forwardRef(() => CustomersService))
     private readonly customersService: CustomersService,
     private readonly audiencesHelper: AudiencesHelper,
-    @Inject(WebsocketGateway)
+    @Inject(forwardRef(() => WebsocketGateway))
     private websocketGateway: WebsocketGateway,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,

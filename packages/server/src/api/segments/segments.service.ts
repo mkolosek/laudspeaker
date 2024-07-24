@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import { Filter, Document } from 'mongodb';
 import { Queue } from 'bullmq';
 import * as Sentry from '@sentry/node';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()

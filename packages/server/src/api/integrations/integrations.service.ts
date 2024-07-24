@@ -21,7 +21,7 @@ import handleDatabricks from './databricks.worker';
 import { Pool } from 'pg';
 import Cursor from 'pg-cursor';
 import handleMySql from './mysql.worker';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()

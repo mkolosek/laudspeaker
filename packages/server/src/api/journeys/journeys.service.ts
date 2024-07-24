@@ -86,7 +86,7 @@ import { eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
 import { CacheService } from '@/common/services/cache.service';
 import { EntityComputedFieldsHelper } from '@/common/helper/entityComputedFields.helper';
 import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
-import { QueueType } from '@/common/services/queue/types/queue';
+import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 import { Segment, SegmentType } from '../segments/entities/segment.entity';
 

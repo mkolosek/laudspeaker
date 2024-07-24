@@ -1,10 +1,14 @@
 import { RMQConnection } from './rmq-connection';
 import { RMQChannel } from './rmq-channel';
+import { Inject, Logger } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 
 export class RMQConnectionManager {
 
 	private _connection: RMQConnection;
 	private _channel: RMQChannel;
+  @Inject(WINSTON_MODULE_NEST_PROVIDER)
+  private logger: Logger;
 
 	constructor(connection: RMQConnection, channel: RMQChannel) {
 		this._connection = connection;
@@ -38,6 +42,8 @@ export class RMQConnectionManager {
   }
 
 	async close(): Promise<void> {
+    // this.logger.verbose("Closing RMQConnectionManager");
+
     const closePromise = Promise.resolve()
       .finally( () => this.channel.close() )
       .finally( () => this.connection.close() );

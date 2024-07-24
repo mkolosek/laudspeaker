@@ -1,6 +1,9 @@
 import { RMQConnectionManager } from './rmq-connection-manager';
-import { QueueType } from '../types/queue';
+import { QueueManager } from './queue-manager';
+import { QueueType } from '../types/queue-type';
+import { QueueDestination } from '../types/queue-destination';
 import { StepType } from '../../../../api/steps/types/step.interface';
+import { randomUUID } from 'crypto';
 
 export class Producer {
   private static connectionMgr: RMQConnectionManager;
@@ -12,20 +15,37 @@ export class Producer {
     Producer.connectionMgr = connectionMgr;
   }
 
-  private static async publish(queue: QueueType, jobs: any[]) {
-    let contents;
-    let jobOptions;
+  static async close() {
+    return this.connectionMgr.close();
+  }
 
-    for(const job of jobs) {
-      contents = Buffer.from(JSON.stringify(job));
-
-      jobOptions = {
-        ...this.publishOptions,
-        priority: job.opts.priority
-      }
-
-      await this.connectionMgr.channelObj.sendToQueue(queue, contents, jobOptions);
+  private static async sendJobToQueue(queue: QueueType, destination: QueueDestination, job: any) {
+    const contents = Buffer.from(JSON.stringify(job));
+    const queueName = QueueManager.getQueueName(queue, destination);
+    const options = {
+      ...this.publishOptions,
+      priority: job.metadata.priority
     }
+
+    await this.connectionMgr.channelObj.sendToQueue(queueName, contents, options);
+  }
+
+  private static async publish(queue: QueueType, jobs: any[]) {
+    for(const job of jobs) {
+      await this.sendJobToQueue(queue, QueueDestination.PENDING, job);
+    }
+  }
+
+  static async addToCompleted(queue: QueueType, job: any) {
+    await this.sendJobToQueue(queue, QueueDestination.COMPLETED, job);
+  }
+
+  static async addToFailed(queue: QueueType, job: any) {
+    await this.sendJobToQueue(queue, QueueDestination.FAILED, job);
+  }
+
+  static async requeueJob(queue: QueueType, job: any) {
+    await this.sendJobToQueue(queue, QueueDestination.PENDING, job);
   }
 
   private static getStepDepthFromBulkJobs(jobs: any[]): number {
@@ -143,14 +163,15 @@ export class Producer {
     const jobs: {
       name: string;
       data: any;
-      opts: any;
+      metadata: any;
     }[] = [];
 
     for (let i = 0; i < jobsData.length; i++) {
       jobs.push({
         name: name ?? queue,
         data: jobsData[i],
-        opts: {
+        metadata: {
+          id: randomUUID(),
           priority: priorities[i],
         },
       });

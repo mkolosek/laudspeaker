@@ -78,15 +78,6 @@ function getProvidersList() {
       EventsProcessor,
       EventsPreProcessor,
       EventsPostProcessor,
-      ExitStepProcessor,
-      ExperimentStepProcessor,
-      JumpToStepProcessor,
-      MessageStepProcessor,
-      MultisplitStepProcessor,
-      StartStepProcessor,
-      TimeDelayStepProcessor,
-      TimeWindowStepProcessor,
-      WaitUntilStepProcessor,
     ];
   }
 

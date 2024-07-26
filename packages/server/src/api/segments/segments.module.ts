@@ -27,7 +27,6 @@ function getProvidersList() {
     providerList = [
       ...providerList,
       SegmentUpdateProcessor,
-      CustomerChangeProcessor,
     ];
   }
 
@@ -41,7 +40,6 @@ function getExportList() {
     exportList = [
       ...exportList,
       SegmentUpdateProcessor,
-      CustomerChangeProcessor,
     ];
   }
 

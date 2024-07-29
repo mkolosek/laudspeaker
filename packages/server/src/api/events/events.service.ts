@@ -61,11 +61,7 @@ import {
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
 import { MobileBatchDto } from './dto/mobile-batch.dto';
 import e from 'express';
-import {
-  ClickHouseEventProvider,
-  ClickHouseMessage,
-  WebhooksService,
-} from '../webhooks/webhooks.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { Liquid } from 'liquidjs';
 import { cleanTagsForSending } from '@/shared/utils/helpers';
 import { randomUUID } from 'crypto';
@@ -73,6 +69,8 @@ import * as Sentry from '@sentry/node';
 import { FindType } from '../customers/enums/FindType.enum';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 @Injectable()
 export class EventsService {

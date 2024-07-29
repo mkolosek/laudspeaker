@@ -24,10 +24,7 @@ import { AccountsService } from '../api/accounts/accounts.service';
 import { Account } from '../api/accounts/entities/accounts.entity';
 import { CustomersService } from '../api/customers/customers.service';
 import { EventsService } from '../api/events/events.service';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '@/api/webhooks/webhooks.service';
+import { WebhooksService } from '@/api/webhooks/webhooks.service';
 import {
   Customer,
   CustomerDocument,
@@ -44,7 +41,7 @@ import {
   CustomerKeysDocument,
 } from '@/api/customers/schemas/customer-keys.schema';
 import { EventDto } from '@/api/events/dto/event.dto';
-
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 interface SocketData {
   account: Account & { apiKey: string };
   customerId: string;

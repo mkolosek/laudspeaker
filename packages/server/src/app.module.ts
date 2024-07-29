@@ -62,6 +62,7 @@ import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HealthCheckService } from './app.healthcheck.service';
 import { QueueModule } from '@/common/services/queue/queue.module';
+import { ClickHouseModule } from '@/common/services/clickhouse/clickhouse.module';
 
 const sensitiveKeys = [
   /cookie/i,
@@ -238,6 +239,18 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       JourneyLocation,
       OrganizationInvites,
     ]),
+    ClickHouseModule.register({
+      url: process.env.CLICKHOUSE_HOST
+        ? process.env.CLICKHOUSE_HOST.includes('http')
+          ? process.env.CLICKHOUSE_HOST
+          : `http://${process.env.CLICKHOUSE_HOST}`
+        : 'http://localhost:8123',
+      username: process.env.CLICKHOUSE_USER ?? 'default',
+      password: process.env.CLICKHOUSE_PASSWORD ?? '',
+      database: process.env.CLICKHOUSE_DB ?? 'default',
+      max_open_connections: process.env.CLICKHOUSE_MAX_OPEN_CONNECTIONS ?? 10,
+      keep_alive: { enabled: true }
+    }),
     IntegrationsModule,
     CustomersModule,
     TemplatesModule,

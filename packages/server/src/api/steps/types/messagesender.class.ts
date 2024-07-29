@@ -3,10 +3,6 @@ import Mailgun from 'mailgun.js';
 import formData from 'form-data';
 import { Liquid } from 'liquidjs';
 import { MailService } from '@sendgrid/mail';
-import {
-  ClickHouseEventProvider,
-  ClickHouseMessage,
-} from '../../webhooks/webhooks.service';
 import twilio from 'twilio';
 import { PostHog } from 'posthog-node';
 import * as admin from 'firebase-admin';
@@ -18,6 +14,8 @@ import { MIMEType } from '@/api/templates/entities/template.entity';
 import { randomUUID } from 'crypto';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Inject, Logger } from '@nestjs/common';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 export enum MessageType {
   SMS = 'sms',

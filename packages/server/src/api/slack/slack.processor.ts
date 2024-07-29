@@ -3,15 +3,13 @@ import { LoggerService, Injectable, Inject } from '@nestjs/common';
 import { WebClient } from '@slack/web-api';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Liquid } from 'liquidjs';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '../webhooks/webhooks.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
 @Processor('slack')

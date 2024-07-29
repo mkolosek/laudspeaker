@@ -43,7 +43,7 @@ export class QueueExplorer implements
   }
 
   async onModuleDestroy() {
-    Promise.all([
+    await Promise.all([
       QueueManager.close(),
       Producer.close()
     ]);

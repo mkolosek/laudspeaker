@@ -26,23 +26,15 @@ import {
   DEFAULT_PLAN,
   OrganizationPlan,
 } from './entities/organization-plan.entity';
-import { createClient } from '@clickhouse/client';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  ClickHouseTable,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
 
 @Injectable()
 export class OrganizationService {
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
-
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -60,7 +52,9 @@ export class OrganizationService {
     @InjectRepository(Account)
     public accountRepository: Repository<Account>,
     @Inject(AuthHelper)
-    public readonly authHelper: AuthHelper
+    public readonly authHelper: AuthHelper,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -494,7 +488,7 @@ export class OrganizationService {
     }
 
     const res = await this.clickhouseClient.query({
-      query: `SELECT COUNT(*) FROM message_status WHERE workspaceId IN {workspaceIds:String}`,
+      query: `SELECT COUNT(*) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE workspaceId IN {workspaceIds:String}`,
       query_params: {
         workspaceIds: `(${workspaceIds.join(',')})`,
       },

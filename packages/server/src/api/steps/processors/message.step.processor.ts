@@ -31,15 +31,13 @@ import { cleanTagsForSending } from '../../../shared/utils/helpers';
 import { MessageSender } from '../types/messagesender.class';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '@/api/webhooks/webhooks.service';
+import { WebhooksService } from '@/api/webhooks/webhooks.service';
 import { OrganizationService } from '@/api/organizations/organizations.service';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
 @Processor('message.step')

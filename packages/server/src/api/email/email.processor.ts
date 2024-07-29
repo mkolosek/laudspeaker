@@ -8,10 +8,7 @@ import Mailgun from 'mailgun.js';
 import formData from 'form-data';
 import { Liquid } from 'liquidjs';
 import { MailService } from '@sendgrid/mail';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '../webhooks/webhooks.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import twilio from 'twilio';
 import { PostHog } from 'posthog-node';
 import * as admin from 'firebase-admin';
@@ -22,6 +19,7 @@ import { Repository } from 'typeorm';
 import { workspacesUrl } from 'twilio/lib/jwt/taskrouter/util';
 import { Processor } from '@/common/services/queue/decorators/processor';
 import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 export enum MessageType {
   SMS = 'sms',

@@ -10,7 +10,6 @@ import Errors from '../../shared/utils/errors';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { Queue } from 'bullmq';
 import { StepType } from './types/step.interface';
-import { createClient } from '@clickhouse/client';
 import { Requeue } from './entities/requeue.entity';
 import { JourneyLocationsService } from '../journeys/journey-locations.service';
 import { CustomersService } from '../customers/customers.service';
@@ -18,19 +17,13 @@ import { Journey } from '../journeys/entities/journey.entity';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose, { ClientSession } from 'mongoose';
 import * as Sentry from '@sentry/node';
+import {
+  ClickHouseTable,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
 
 @Injectable()
 export class StepsService {
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
   /**
    * Step service constructor; this class is the only class that should
    * be using the Steps repository (`Repository<Step>`) directly.
@@ -48,7 +41,9 @@ export class StepsService {
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(forwardRef(() => CustomersService))
-    private readonly customersService: CustomersService
+    private readonly customersService: CustomersService,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -733,21 +728,21 @@ export class StepsService {
   async getStats(account: Account, session: string, stepId?: string) {
     if (!stepId) return {};
     const sentResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(*) AS count FROM message_status WHERE event = 'sent' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(*) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'sent' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const sentData = (await sentResponse.json<any>())?.data;
     const sent = +sentData[0].count;
 
     const deliveredResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(*) AS count FROM message_status WHERE event = 'delivered' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(*) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'delivered' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const deliveredData = (await deliveredResponse.json<any>())?.data;
     const delivered = +deliveredData[0].count;
 
     const openedResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM message_status WHERE event = 'opened' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'opened' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const openedData = (await openedResponse.json<any>())?.data;
@@ -756,7 +751,7 @@ export class StepsService {
     const openedPercentage = (opened / sent) * 100;
 
     const clickedResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM message_status WHERE event = 'clicked' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'clicked' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const clickedData = (await clickedResponse.json<any>())?.data;
@@ -765,7 +760,7 @@ export class StepsService {
     const clickedPercentage = (clicked / sent) * 100;
 
     const whResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(*) AS count FROM message_status WHERE event = 'sent' AND stepId = {stepId:UUID} AND eventProvider = 'webhooks' `,
+      query: `SELECT COUNT(*) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'sent' AND stepId = {stepId:UUID} AND eventProvider = 'webhooks' `,
       query_params: {
         stepId,
       },

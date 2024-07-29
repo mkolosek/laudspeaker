@@ -27,7 +27,10 @@ import { Producer } from '@/common/services/queue/classes/producer';
 const BATCH_SIZE = +process.env.START_BATCH_SIZE;
 
 @Injectable()
-@Processor('start')
+@Processor(
+  'start', {
+    prefetchCount: 1
+  })
 export class StartProcessor extends ProcessorBase {
   constructor(
     private dataSource: DataSource,

@@ -45,7 +45,13 @@ export enum EventType {
  * enrollment for that customer.
  */
 @Injectable()
-@Processor('events')
+@Processor(
+  'events', {
+    maxRetries: {
+      count: Number.MAX_SAFE_INTEGER,
+      delayMS: 1000
+    }
+  })
 export class EventsProcessor extends ProcessorBase {
   private providerMap: Record<
     EventType,

@@ -68,12 +68,22 @@ export class QueueExplorer implements
       });
 
       for(const wrapper of providers) {
-        const { name: queueName } = this.reflector.get(PROCESSOR_METADATA, wrapper.instance.constructor);
+        const processorMeta = this.reflector.get(PROCESSOR_METADATA, wrapper.instance.constructor);
+
+        const {
+          name: queueName,
+          processorOptions } = processorMeta;
+
         const channel = await this.createChannel(connection);
 
         const connectionMgr = new RMQConnectionManager(connection, channel);
 
-        const worker = new WorkOrchestrator(queueName, wrapper.instance, connectionMgr);
+        const worker = new WorkOrchestrator(
+          queueName,
+          wrapper.instance,
+          processorOptions,
+          connectionMgr
+        );
 
         await worker.setupListeners();
       }

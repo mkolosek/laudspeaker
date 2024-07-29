@@ -1,7 +1,6 @@
 import { RMQConnectionManager } from './rmq-connection-manager';
-import { QueueType } from '../types/queue-type';
-import { QueueDestination } from '../types/queue-destination';
 import { QueueManager } from './queue-manager';
+import { QueueType, QueueDestination } from '../types';
 import { Producer } from './producer';
 import { Inject, Logger } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -9,9 +8,9 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 export class WorkOrchestrator {
 
   private queue: QueueType;
-  private destination: QueueDestination;
   private queueName: string;
   private processor;
+  private processorOptions;
   private connectionMgr: RMQConnectionManager;
 
   private consumerOptions = {
@@ -24,11 +23,15 @@ export class WorkOrchestrator {
   @Inject(WINSTON_MODULE_NEST_PROVIDER)
   private readonly logger: Logger;
 
-  constructor(queue: QueueType, processor, connectionMgr: RMQConnectionManager) {
+  constructor(
+    queue: QueueType,
+    processor,
+    processorOptions,
+    connectionMgr: RMQConnectionManager) {
     this.queue = queue;
-    this.destination = QueueDestination.PENDING;
-    this.queueName = QueueManager.getQueueName(this.queue, this.destination);
+    this.queueName = QueueManager.getQueueName(this.queue, QueueDestination.PENDING);
     this.processor = processor;
+    this.processorOptions = processorOptions
     this.connectionMgr = connectionMgr;
   }
 
@@ -37,10 +40,15 @@ export class WorkOrchestrator {
 
     await channel.assertQueue(
       this.queueName,
-      QueueManager.queueOptions
+      QueueManager.queueOptions 
     );
 
-    await channel.prefetch( parseInt(process.env.RMQ_QUEUE_PREFETCH_COUNT ?? '1') );
+    let prefetchCount = this.processorOptions.prefetchCount;
+
+    if (!prefetchCount)
+      prefetchCount = parseInt(process.env.RMQ_QUEUE_PREFETCH_COUNT ?? '1');
+
+    await channel.prefetch(prefetchCount);
 
     const consumerTag = this.generateConsumerTag();
 
@@ -123,18 +131,27 @@ export class WorkOrchestrator {
 
     const jobDeliveryCount = this.getJobDeliveryCount(job);
 
-    // retry every 1 second for events
-    if (queue == QueueType.EVENTS) {
-      return this.retryJob(channel, msg, job, queue, processor, error, 1000);
-    } else if (queue == QueueType.MESSAGE_STEP) {
-      // no retries for message step
-      return this.failJob(channel, msg, job, queue, processor, error);
+    const maxRetries = this.processorOptions.maxRetries?.count ?? 3;
+
+    if (jobDeliveryCount >= maxRetries ) {
+      return this.failJob(
+        channel,
+        msg,
+        job,
+        queue,
+        processor,
+        error
+      );
     } else {
-      if (jobDeliveryCount > 3 ) {
-        return this.failJob(channel, msg, job, queue, processor, error);
-      } else {
-        return this.retryJob(channel, msg, job, queue, processor, error);
-      }
+      return this.retryJob(
+        channel,
+        msg,
+        job,
+        queue,
+        processor,
+        error,
+        this.processorOptions.maxRetries.delayMS
+      );
     }
   }
 

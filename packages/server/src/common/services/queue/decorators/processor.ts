@@ -1,9 +1,14 @@
 import { Scope, SetMetadata } from '@nestjs/common';
 import { PROCESSOR_METADATA } from '../queue.constants';
+import { ProcessorOptions } from '../interfaces';
 
-export function Processor(queueName: string): ClassDecorator {
+export function Processor(
+  queueName: string,
+  processorOptions: ProcessorOptions = {}): ClassDecorator {
+
   const options = {
-  	name: queueName
+  	name: queueName,
+    processorOptions,
   };
 
   return (target: Function) => {

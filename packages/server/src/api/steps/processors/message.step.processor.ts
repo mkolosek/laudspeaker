@@ -40,7 +40,12 @@ import { Producer } from '@/common/services/queue/classes/producer';
 import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
-@Processor('message.step')
+@Processor(
+  'message.step', {
+    maxRetries: {
+      count: 0,
+    }
+  })
 export class MessageStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)

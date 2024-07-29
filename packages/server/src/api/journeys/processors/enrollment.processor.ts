@@ -21,7 +21,10 @@ import { QueueType } from '@/common/services/queue/types/queue-type';
 import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@Processor('enrollment')
+@Processor(
+  'enrollment', {
+    prefetchCount: 1
+  })
 export class EnrollmentProcessor extends ProcessorBase {
   constructor(
     private dataSource: DataSource,

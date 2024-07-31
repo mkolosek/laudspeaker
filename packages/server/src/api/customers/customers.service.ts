@@ -2316,27 +2316,7 @@ export class CustomersService {
   }
 
   public async countCustomersInStep(account: Account, stepId: string) {
-    const step = await this.stepsService.findOne(account, stepId, '');
-    if (!step) throw new NotFoundException('Step not found');
-
-    let result = step.customers.length;
-
-    for (const customerJSON of step.customers) {
-      const customerId = JSON.parse(customerJSON)?.customerID;
-
-      if (!customerId) {
-        result--;
-        continue;
-      }
-
-      const customer = await this.findById(account, customerId);
-      if (!customer) {
-        result--;
-        continue;
-      }
-    }
-
-    return result;
+    return 0;
   }
 
   public async bulkCountCustomersInSteps(account: Account, stepIds: string[]) {
@@ -2359,29 +2339,9 @@ export class CustomersService {
     take = 100,
     skip = 0
   ) {
-    if (take > 100) take = 100;
-
-    const step = await this.stepsService.findOne(account, stepId, '');
-    if (!step) throw new NotFoundException('Step not found');
-
-    const totalPages = Math.ceil(step.customers.length / take || 1);
-
-    const customerIds = step.customers
-      .slice(skip, skip + take)
-      .map((customer) => JSON.parse(customer).customerID);
-
-    const customers = await Promise.all(
-      customerIds.map(async (customerId) => {
-        const customer = await this.findById(account, customerId);
-        if (!customer) return undefined;
-
-        return { id: customer._id, email: customer.email };
-      })
-    );
-
     return {
-      data: customers.filter((customer) => customer && customer.id),
-      totalPages,
+      data: [],
+      totalPages: 0,
     };
   }
 

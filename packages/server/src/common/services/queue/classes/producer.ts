@@ -19,7 +19,10 @@ export class Producer {
     return this.connectionMgr.close();
   }
 
-  private static async sendJobToQueue(queue: QueueType, destination: QueueDestination, job: any) {
+  private static async sendJobToQueue(
+    queue: QueueType,
+    destination: QueueDestination,
+    job: any) {
     const contents = Buffer.from(JSON.stringify(job));
     const queueName = QueueManager.getQueueName(queue, destination);
     const options = {
@@ -27,25 +30,29 @@ export class Producer {
       priority: job.metadata.priority
     }
 
-    await this.connectionMgr.channelObj.sendToQueue(queueName, contents, options);
+    return this.connectionMgr.channelObj.sendToQueue(queueName, contents, options);
   }
 
   private static async publish(queue: QueueType, jobs: any[]) {
+    const promises = [];
+
     for(const job of jobs) {
-      await this.sendJobToQueue(queue, QueueDestination.PENDING, job);
+      promises.push(this.sendJobToQueue(queue, QueueDestination.PENDING, job));
     }
+
+    return Promise.all(promises);
   }
 
   static async addToCompleted(queue: QueueType, job: any) {
-    await this.sendJobToQueue(queue, QueueDestination.COMPLETED, job);
+    return this.sendJobToQueue(queue, QueueDestination.COMPLETED, job);
   }
 
   static async addToFailed(queue: QueueType, job: any) {
-    await this.sendJobToQueue(queue, QueueDestination.FAILED, job);
+    return this.sendJobToQueue(queue, QueueDestination.FAILED, job);
   }
 
   static async requeueJob(queue: QueueType, job: any) {
-    await this.sendJobToQueue(queue, QueueDestination.PENDING, job);
+    return this.sendJobToQueue(queue, QueueDestination.PENDING, job);
   }
 
   private static getStepDepthFromBulkJobs(jobs: any[]): number {
@@ -177,7 +184,7 @@ export class Producer {
       });
     }
 
-    await this.publish(queue, jobs);
+    return this.publish(queue, jobs);
   }
 
   /**
@@ -187,7 +194,7 @@ export class Producer {
    * @returns
    */
   static async add(queue: QueueType, jobData: any, name?: string) {
-    await this.addBulk(queue, [jobData], name);
+    return this.addBulk(queue, [jobData], name);
   }
 
   /**
@@ -199,6 +206,6 @@ export class Producer {
   static async addByStepType(stepType: StepType, jobData: any, name?: string) {
     const queue = this.getQueueForStepType(stepType);
 
-    await this.addBulk(queue, [jobData], name);
+    return this.addBulk(queue, [jobData], name);
   }
 }

@@ -1,3 +1,5 @@
+
+
 <p align="center"><a  href="https://laudspeaker.com/?ref=github"><img  src="https://user-images.githubusercontent.com/7728266/194206039-0faecc9d-c500-4c64-8401-dfbefe501e4a.png"  height="100"/></a></p>
 
 <p align="center">
@@ -18,15 +20,29 @@
 
 <img width="1708" alt="UI2" src="https://github.com/laudspeaker/laudspeaker/assets/7728266/4c3c2917-6899-48f7-bcbe-a4bd92049c24">
 
-- **Visual Journey Builder:** Build complex workflows the whole team can understand in a visual tool. Describe the onboarding journey and messaging steps clearly.
-- **Multiple out of product messaging channels like email and sms:** Trigger Emails, SMS and more to nudge users back to complete specific flows.
-- **Monitor and Track User Progress:** See user progress and which steps users get stuck on.
-- **Personalize Journeys for Different User Personas:** Build different user journeys for different personas, so that you highlight the right features for the right users.
-- **Edit, Experiment and Change Onboarding Easily:** Make changes to onboarding copy easily, or edit live journeys.
+## Major Features
 
-## 🚀 Get Started
+<details>
+  <summary><b>Visual Journey Builder:</b> Build complex workflows the whole team can understand in a visual tool.</summary>
+  <img alt="Journey Builder" src="https://github.com/user-attachments/assets/3b3a91f4-3d10-4621-b09c-3165f5636f55">
+</details>
+<details>
+  <summary><b>Segment Builder:</b> Segment users by attributes, actions they have completed, and even retarget based on previous campaigns they have recieved and interacted with</summary>
+  <img alt="Segment Builder" src="https://github.com/user-attachments/assets/59a3567c-af7e-4a69-b57d-d335f016019c"
+>
+</details>
+<details>
+  <summary><b>Multiple messaging channels:</b> Trigger Push, Email, SMS, Webhooks and more to nudge users back to complete specific flows.</summary>
+  <img alt="Analytics" src="https://github.com/user-attachments/assets/c30408ae-daa7-40be-a457-7de6aab9c9d0">
+</details>
+<details>
+  <summary><b>Run A/B tests and personalize messages:</b> Build user journeys with A/B tests, use liquid templating, and call external apis to personalize messages for the right users</summary>
+  <img alt="Personalization" src="https://github.com/user-attachments/assets/e08abd8c-cfdf-46e2-a5e9-17bfb3c0bdb6">
+</details>
 
-Use [Laudspeaker Cloud](https://app.laudspeaker.com/login/?ref=github) or if you are interested in our paid self deployed (business/enterprise) plan book a time below:
+## 🚀 Try Laudspeaker
+
+Use [Laudspeaker Cloud](https://app.laudspeaker.com/login/?ref=github) or if you are interested in our paid self deployed (enterprise) plan book a time below:
 
 ### Want to use at your company?
 
@@ -36,9 +52,9 @@ Questions? Please join our [Slack channel](https://join.slack.com/t/laudspeakeru
 
 ## 🔥 What makes Laudspeaker cool?
 
-Lauspeaker is the only multi-channel open-source customer messaging workflow software, which is focused on being event triggered, has been built with a visual journey feature from day one and is focused on scalability.
+Lauspeaker is the only multi-channel open-source customer messaging workflow software, which is focused on being event triggered, has been built with a visual journey feature from day one and is focused on scalability, in fact our software has already been used to send over **500million** messages
 
-We support email, sms and slack as a channel and have many more channels on our roadmap.
+We support push, email, sms and webhooks as a channels and have many more channels on our roadmap.
 
 We are planning to build Laudspeaker to work well with the Modern Data Stack, integrating with data warehouses and other services so you can easily import and export data with no fear of lock in or losing control of your data.
 
@@ -49,6 +65,130 @@ We are planning to build Laudspeaker to work well with the Modern Data Stack, in
 - [ ] Public: Production-ready.
 
 We're currently in Public Beta.
+
+## 🚀 Our Roadmap
+
+<table>
+<tr>
+  <th>Q2 2024</th>
+</tr>
+<tr>
+  <td>
+
+<table>
+  <tbody>
+    <tr>
+      <td align="left" valign="middle">
+        ✅️ Bolster Segmentation filters (events) 
+      </td>
+      <td align="left" valign="middle">
+        ✅️ Handle >10m user scale
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+         ✅️ Collect devilerability metrics in mobile sdks
+      </td>
+      <td align="left" valign="middle">
+         ✅️ Allow api calls for personalization
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+         ✅️ Improve CSV upload experience
+      </td>
+      <td align="left" valign="middle">
+         ✅️ Improved mobile push support
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+</td>       
+</tr>
+</table>
+
+
+<table>
+<tr>
+  <th>Q3 2024</th>
+</tr>
+<tr>
+  <td>
+
+<table>
+  <tbody>
+    <tr>
+      <td align="left" valign="middle">
+        ✅️ Introduce rabbitmq, deprecate mongo
+      </td>
+      <td align="left" valign="middle">
+        🚧 Handle >100m user scale
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+        🚧 User timezone support
+      </td>
+      <td align="left" valign="middle">
+        🚧 Improve A/B testing capability 
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+        🚧 In-app designer v2 (modals, tooltips)
+      </td>
+      <td align="left" valign="middle">
+        🔜 Exportable journey audit logs
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+</td>       
+</tr>
+</table>
+
+
+<table>
+<tr>
+  <th>Q4 2024</th>
+</tr>
+<tr>
+  <td>
+
+<table>
+  <tbody>
+    <tr>
+      <td align="left" valign="middle">
+        🔜 Syncing with Data warehouse
+      </td>
+      <td align="left" valign="middle">
+         🔜 Approval Flows + Advanced permissions
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+        🔜 Multi-workspace support for organizations
+      </td>
+      <td align="left" valign="middle">
+        🔜 Mobile Feature #2
+      </td>
+    </tr>
+    <tr>
+      <td align="left" valign="middle">
+       🔜 SSO / SAML integration 
+      </td>
+      <td align="left" valign="middle">
+        🔜 Mobile Feature #3
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+</td>       
+</tr>
+</table>
 
 ## License
 

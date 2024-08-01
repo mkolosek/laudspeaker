@@ -190,6 +190,13 @@ We're currently in Public Beta.
 </tr>
 </table>
 
+## Architecture 
+
+<details>
+  <summary><b>Broad overview:</b> </summary>
+  <img alt="Journey Builder" src="https://github.com/user-attachments/assets/8a2beeae-2674-43ee-85a3-a9dd994dcf3d">
+</details>
+
 ## License
 
 **Laudspeaker** is open source and released under the AGPL-3.0 license with the exception of our ee directory (which is currently empty!) but will be under the Laudspeaker Enterprise Edition license.

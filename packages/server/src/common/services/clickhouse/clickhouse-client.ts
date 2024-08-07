@@ -22,10 +22,13 @@ import {
 export class ClickHouseClient implements OnModuleDestroy {
   private client;
 
-  private readonly insertAsyncSettings: ClickHouseSettings = {
+  private readonly insertSettings: ClickHouseSettings = {
     date_time_input_format: 'best_effort',
+  };
+
+  private readonly insertAsyncSettings: ClickHouseSettings = {
     async_insert: 1,
-    wait_for_async_insert: 1,
+    wait_for_async_insert: 0,
     async_insert_max_data_size:
       process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_MAX_SIZE
       ?? '1000000',
@@ -48,6 +51,16 @@ export class ClickHouseClient implements OnModuleDestroy {
   insert(
     params: InsertParams
   ): Promise<InsertResult> {
+    const options = params.clickhouse_settings ?? {};
+
+    params = {
+      ...params,
+      clickhouse_settings: {
+        ...options,
+        ...this.insertSettings
+      },
+    };
+
     return this.client.insert(params);
   }
 

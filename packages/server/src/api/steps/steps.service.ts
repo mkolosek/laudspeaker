@@ -392,7 +392,7 @@ export class StepsService {
     try {
       let query = this.stepsRepository
         .createQueryBuilder('step')
-        .where({ journey: journeyID })
+        .where({ journeyId: journeyID })
         .andWhere("metadata -> 'destination' IS NULL")
         .andWhere("metadata -> 'timeBranch' -> 'destination' IS NULL")
         .andWhere(`NOT EXISTS (

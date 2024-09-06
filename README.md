@@ -136,7 +136,7 @@ We're currently in Public Beta.
     </tr>
     <tr>
       <td align="left" valign="middle">
-        🚧 In-app designer v2 (modals, tooltips)
+        🚧 Mobile Feature #1
       </td>
       <td align="left" valign="middle">
         🔜 Exportable journey audit logs

@@ -70,7 +70,7 @@ We're currently in Public Beta.
 
 <table>
 <tr>
-  <th>Q2 2024</th>
+  <th>Q3 2024</th>
 </tr>
 <tr>
   <td>
@@ -111,7 +111,7 @@ We're currently in Public Beta.
 
 <table>
 <tr>
-  <th>Q3 2024</th>
+  <th>Q4 2024</th>
 </tr>
 <tr>
   <td>
@@ -152,7 +152,7 @@ We're currently in Public Beta.
 
 <table>
 <tr>
-  <th>Q4 2024</th>
+  <th>Q1 2025</th>
 </tr>
 <tr>
   <td>

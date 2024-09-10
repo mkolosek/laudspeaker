@@ -4,6 +4,7 @@ services:
     container_name: redis
     image: redis:alpine
     command: redis-server
+    restart: always
     ports:
       - "6379:6379"
     environment:
@@ -26,7 +27,7 @@ services:
       POSTGRES_DB: laudspeaker
     ports:
       - "5532:5432"
-    restart: unless-stopped
+    restart: always
     volumes:
       - ./data:/var/lib/postgresql/data
     networks:
@@ -39,6 +40,7 @@ services:
     ports:
       - "27017:27017"
     command: "--bind_ip_all --replSet rs0"
+    restart: always
     healthcheck:
       test:
         [
@@ -60,7 +62,7 @@ services:
     hostname: clickhouse
     container_name: clickhouse
     image: clickhouse/clickhouse-server:latest
-    restart: on-failure
+    restart: always
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 5s
@@ -76,6 +78,7 @@ services:
   zoo1:
     image: bitnami/zookeeper:latest
     hostname: zoo1
+    restart: always
     container_name: zoo1
     ports:
       - "2181:2181"
@@ -89,6 +92,7 @@ services:
     image: bitnami/kafka:3.6.0
     hostname: kafka1
     container_name: kafka1
+    restart: always
     ports:
       - "29092:29092"
       - "9092:9092"
@@ -118,6 +122,7 @@ services:
     image: bitnami/kafka:latest
     hostname: kafka-connect1
     container_name: kafka-connect1
+    restart: always
     healthcheck:
       test: ["CMD", "curl", "localhost:8083"]
       interval: 5s
@@ -162,6 +167,7 @@ services:
   s3:
     image: quay.io/minio/minio
     command: "server /data --console-address :9123"
+    restart: always
     ports:
       - "9123:9123"
       - "9001:9000"
@@ -180,6 +186,7 @@ services:
   ping-server:
     image: jaredhanson11/ping-server:latest
     container_name: ping-server
+    restart: always
     ports:
       - "8555:8555"
     environment:
@@ -190,6 +197,7 @@ services:
   laudspeaker-web:
     image: kolosek/laudspeaker
     container_name: laudspeaker-web
+    restart: always
     ports:
       - "8180:80"
     depends_on:
@@ -205,6 +213,7 @@ services:
   laudspeaker-api:
     image: kolosek/laudspeaker-api
     container_name: laudspeaker-api
+    restart: always
     ports:
       - "8181:3001"
     depends_on:
@@ -222,6 +231,7 @@ services:
   laudspeaker-queue:
     image: kolosek/laudspeaker-api
     container_name: laudspeaker-queue
+    restart: always
     healthcheck:
       test: '[ $(find /tmp/laudspeaker-healthcheck-queue -mmin -1 | wc -l) -eq 1 ] || false'
       interval: 10s
@@ -242,6 +252,7 @@ services:
   laudspeaker-cron:
     image: kolosek/laudspeaker-api
     container_name: laudspeaker-cron
+    restart: always
     healthcheck:
       test: '[ $(find /tmp/laudspeaker-healthcheck-cron -mmin -1 | wc -l) -eq 1 ] || false'
       interval: 10s
@@ -299,6 +310,7 @@ services:
   kafka-gui:
     container_name: kafka-gui
     image: provectuslabs/kafka-ui:latest
+    restart: always
     profiles:
       - gui
     ports:
@@ -320,6 +332,7 @@ services:
   redis-gui:
     container_name: redis-gui
     image: redis/redisinsight:latest
+    restart: always
     profiles:
       - gui
     ports:
@@ -339,6 +352,7 @@ services:
       context: ./local-env/
       dockerfile: Dockerfile.initenv
     container_name: init-gui
+    restart: always
     depends_on:
       redis-gui:
         condition: service_healthy

@@ -20,12 +20,6 @@ import { PosthogBatchEventDto } from './dto/posthog-batch-event.dto';
 import { EventDto } from './dto/event.dto';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { StatusJobDto } from './dto/status-event.dto';
-import {
-  Processor,
-  WorkerHost,
-  OnWorkerEvent,
-  InjectQueue,
-} from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Job, Queue, UnrecoverableError } from 'bullmq';
@@ -57,7 +51,7 @@ import {
   PushPlatforms,
 } from '../templates/entities/template.entity';
 import { Workspaces } from '../workspaces/entities/workspaces.entity';
-import { ProviderType } from './events.preprocessor';
+import { ProviderType } from './processors/events.preprocessor';
 import { SendFCMDto } from './dto/send-fcm.dto';
 import { IdentifyCustomerDTO } from './dto/identify-customer.dto';
 import {
@@ -67,16 +61,16 @@ import {
 import { SetCustomerPropsDTO } from './dto/set-customer-props.dto';
 import { MobileBatchDto } from './dto/mobile-batch.dto';
 import e from 'express';
-import {
-  ClickHouseEventProvider,
-  ClickHouseMessage,
-  WebhooksService,
-} from '../webhooks/webhooks.service';
+import { WebhooksService } from '../webhooks/webhooks.service';
 import { Liquid } from 'liquidjs';
 import { cleanTagsForSending } from '@/shared/utils/helpers';
 import { randomUUID } from 'crypto';
 import * as Sentry from '@sentry/node';
 import { FindType } from '../customers/enums/FindType.enum';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
+import { ClickHouseMessage } from '@/common/services/clickhouse/interfaces/clickhouse-message';
 
 @Injectable()
 export class EventsService {
@@ -92,11 +86,6 @@ export class EventsService {
     public CustomerKeysModel: Model<CustomerKeysDocument>,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{message}') private readonly messageQueue: Queue,
-    @InjectQueue('{events}') private readonly eventQueue: Queue,
-    @InjectQueue('{events_pre}')
-    private readonly eventPreprocessorQueue: Queue,
-    @InjectQueue('{slack}') private readonly slackQueue: Queue,
     @InjectModel(Event.name)
     private EventModel: Model<EventDocument>,
     @InjectModel(PosthogEvent.name)
@@ -108,7 +97,6 @@ export class EventsService {
     @InjectModel(PosthogEventType.name)
     private PosthogEventTypeModel: Model<PosthogEventTypeDocument>,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('{webhooks}') private readonly webhooksQueue: Queue,
     @Inject(forwardRef(() => JourneysService))
     private readonly journeysService: JourneysService
   ) {
@@ -151,6 +139,11 @@ export class EventsService {
         await collection.createIndex({ event: 1, workspaceId: 1 });
         await collection.createIndex({ correlationKey: 1, workspaceId: 1 });
         await collection.createIndex({ correlationValue: 1, workspaceId: 1 });
+        await collection.createIndex({
+          correlationValue: 1,
+          workspaceId: 1,
+          event: 1,
+        });
         await collection.createIndex({ createdAt: 1 });
         await collection.createIndex({ workspaceId: 1, _id: -1 });
         await collection.createIndex({ event: 'text' });
@@ -266,21 +259,22 @@ export class EventsService {
   }
 
   async getJobStatus(body: StatusJobDto, type: JobTypes, session: string) {
-    const jobQueues = {
-      [JobTypes.email]: this.messageQueue,
-      [JobTypes.slack]: this.slackQueue,
-      [JobTypes.events]: this.eventQueue,
-      [JobTypes.webhooks]: this.webhooksQueue,
-    };
+    throw Error("Deprecated")
+    // const jobQueues = {
+    //   [JobTypes.email]: this.messageQueue,
+    //   [JobTypes.slack]: this.slackQueue,
+    //   [JobTypes.events]: this.eventQueue,
+    //   [JobTypes.webhooks]: this.webhooksQueue,
+    // };
 
-    try {
-      const job = await jobQueues[type].getJob(body.jobId);
-      const state = await job.getState();
-      return state;
-    } catch (err) {
-      this.logger.error(`Error getting ${type} job status: ` + err);
-      throw new HttpException(`Error getting ${type} job status`, 503);
-    }
+    // try {
+    //   const job = await jobQueues[type].getJob(body.jobId);
+    //   const state = await job.getState();
+    //   return state;
+    // } catch (err) {
+    //   this.logger.error(`Error getting ${type} job status: ` + err);
+    //   throw new HttpException(`Error getting ${type} job status`, 503);
+    // }
   }
 
   async posthogPayload(
@@ -310,18 +304,11 @@ export class EventsService {
         numEvent < chronologicalEvents.length;
         numEvent++
       ) {
-        await this.eventPreprocessorQueue.add(
-          'posthog',
-          {
-            account: account,
-            event: eventDto,
-            session: session,
-          },
-          {
-            attempts: 10,
-            backoff: { delay: 1000, type: 'exponential' },
-          }
-        );
+        await Producer.add(QueueType.EVENTS_PRE, {
+          account: account,
+          event: eventDto,
+          session: session,
+        }, 'posthog');
       }
     } catch (e) {
       await queryRunner.rollbackTransaction();
@@ -337,12 +324,14 @@ export class EventsService {
     eventDto: EventDto,
     session: string
   ) {
-    await this.eventPreprocessorQueue.add(ProviderType.LAUDSPEAKER, {
+    const jobData = {
       owner: auth.account,
       workspace: auth.workspace,
       event: eventDto,
       session: session,
-    });
+    };
+
+    await Producer.add(QueueType.EVENTS_PRE, jobData, ProviderType.LAUDSPEAKER)
   }
 
   async getOrUpdateAttributes(resourceId: string, session: string) {
@@ -779,8 +768,6 @@ export class EventsService {
     //externalId: boolean,
     //numberOfTimes: Number,
   ) {
-    //console.log("In getCustomersbyEventsMongo by mongo");
-
     const docs = await this.EventModel.aggregate(aggregationPipeline).exec();
 
     return docs;
@@ -1190,17 +1177,26 @@ export class EventsService {
   ) {
     return Sentry.startSpan({ name: 'EventsService.batch' }, async () => {
       let err: any;
-
       try {
         for (const thisEvent of MobileBatchDto.batch) {
-          if (thisEvent.source === 'message') {
+          if (
+            thisEvent.source === 'message' &&
+            thisEvent.event === '$delivered'
+          )
+            continue;
+          if (thisEvent.source === 'message' && thisEvent.event === '$opened') {
             const clickHouseRecord: ClickHouseMessage = {
-              workspaceId: thisEvent.payload.workspaceID,
-              stepId: thisEvent.payload.stepID,
-              customerId: thisEvent.payload.customerID,
-              templateId: String(thisEvent.payload.templateID),
-              messageId: thisEvent.payload.messageID,
-              event: thisEvent.event === '$delivered' ? 'delivered' : 'opened',
+              workspaceId:
+                thisEvent.payload.workspaceID || thisEvent.payload.workspaceId,
+              stepId: thisEvent.payload.stepID || thisEvent.payload.stepId,
+              customerId:
+                thisEvent.payload.customerID || thisEvent.payload.customerId,
+              templateId:
+                String(thisEvent.payload.templateID) ||
+                String(thisEvent.payload.templateId),
+              messageId:
+                thisEvent.payload.messageID || thisEvent.payload.messageId,
+              event: 'opened',
               eventProvider: ClickHouseEventProvider.PUSH,
               processed: false,
               createdAt: new Date(),
@@ -1327,11 +1323,26 @@ export class EventsService {
     return customer._id;
   }
 
-  async deduplication(customer, correlationValue) {
+  async deduplication(
+    customer: CustomerDocument,
+    correlationValue: string | string[],
+    session: string,
+    account: Account
+  ) {
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)}`,
+      this.deduplication.name,
+      session,
+      account.id
+    );
+
+    let updateResult;
+
     // Step 1: Check if the customer's _id is not equal to the given correlation value
     if (customer._id.toString() !== correlationValue) {
       // Step 2: Update the customer's other_ids array with the correlation value if it doesn't already have it
-      const updateResult = await this.customersService.CustomerModel.updateOne(
+      updateResult = await this.customersService.CustomerModel.updateOne(
         {
           _id: customer._id,
           other_ids: { $ne: correlationValue }, // Ensures we don't add duplicates
@@ -1349,6 +1360,16 @@ export class EventsService {
       {
         _id: correlationValue,
       }
+    );
+
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)},
+      updateResult: ${JSON.stringify(updateResult)},
+      duplicateCustomer: ${JSON.stringify(duplicateCustomer)}`,
+      this.deduplication.name,
+      session,
+      account.id
     );
 
     // Determine which deviceTokenSetAt fields to compare
@@ -1372,6 +1393,17 @@ export class EventsService {
       }
     }
 
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)},
+      updateResult: ${JSON.stringify(updateResult)},
+      duplicateCustomer: ${JSON.stringify(duplicateCustomer)},
+      updateFields: ${JSON.stringify(updateFields)}`,
+      this.deduplication.name,
+      session,
+      account.id
+    );
+
     // If there are fields to update (i.e., a more recent token was found), perform the update
     if (Object.keys(updateFields).length > 0) {
       await this.customersService.CustomerModel.updateOne(
@@ -1388,6 +1420,18 @@ export class EventsService {
     const deleteResult = await this.customersService.CustomerModel.deleteMany({
       _id: correlationValue,
     });
+
+    this.debug(
+      `customer: ${JSON.stringify(customer)},
+      correlationValue: ${JSON.stringify(correlationValue)},
+      updateResult: ${JSON.stringify(updateResult)},
+      duplicateCustomer: ${JSON.stringify(duplicateCustomer)},
+      updateFields: ${JSON.stringify(updateFields)},
+      deleteResult: ${JSON.stringify(deleteResult)}`,
+      this.deduplication.name,
+      session,
+      account.id
+    );
   }
 
   async findOrCreateCustomer(
@@ -1397,16 +1441,17 @@ export class EventsService {
     primaryKeyName?: string,
     event?: EventDto
   ): Promise<{ customer: any; findType: FindType }> {
-
-    let { customer, findType } = await this.customersService.findOrCreateCustomerBySearchOptions(
-      workspaceId,
-      {
-        primaryKey: { name: primaryKeyName, value: primaryKeyValue },
-      },
-      session,
-      {},
-      event
-    );
+    let { customer, findType } =
+      await this.customersService.findOrCreateCustomerBySearchOptions(
+        workspaceId,
+        {
+          primaryKey: { name: primaryKeyName, value: primaryKeyValue },
+        },
+        session,
+        {},
+        'event',
+        event
+      );
 
     return { customer, findType };
   }
@@ -1493,7 +1538,12 @@ export class EventsService {
     }
 
     if (customer._id !== event.correlationValue) {
-      await this.deduplication(customer, event.correlationValue);
+      await this.deduplication(
+        customer,
+        event.correlationValue,
+        session,
+        auth.account
+      );
     }
 
     // Filter and validate the event payload against CustomerKeys, with special handling for distinct_id and $anon_distinct_id

@@ -33,11 +33,6 @@ import {
 import { AccountsService } from './api/accounts/accounts.service';
 import Mailgun from 'mailgun.js';
 import formData from 'form-data';
-import { createClient } from '@clickhouse/client';
-import {
-  ClickHouseEventProvider,
-  ClickHouseMessage,
-} from './api/webhooks/webhooks.service';
 import twilio from 'twilio';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import client from '@sendgrid/client';
@@ -45,7 +40,6 @@ import { ModalsService } from './api/modals/modals.service';
 import { randomUUID } from 'crypto';
 import { StepsService } from './api/steps/steps.service';
 import { StepType } from './api/steps/types/step.interface';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { JourneysService } from './api/journeys/journeys.service';
 import { RedlockService } from './api/redlock/redlock.service';
@@ -68,6 +62,14 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Account } from './api/accounts/entities/accounts.entity';
 import * as os from 'os';
 import * as Sentry from '@sentry/node';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  ClickHouseTable,
+  ClickHouseEventProvider,
+  ClickHouseMessage,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
 
 const BATCH_SIZE = 500;
 
@@ -79,17 +81,6 @@ const generateUniqueJobId = (jobData) => {
 
 @Injectable()
 export class CronService {
-  private clickHouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
-
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -121,15 +112,11 @@ export class CronService {
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
-    @InjectQueue('{time.delay.step}') private readonly timeDelayStep: Queue,
-    @InjectQueue('{time.window.step}') private readonly timeWindowStep: Queue,
-    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
-    @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(RedlockService)
     private readonly redlockService: RedlockService,
-    @InjectConnection() private readonly connection: mongoose.Connection
+    @InjectConnection() private readonly connection: mongoose.Connection,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -474,7 +461,10 @@ export class CronService {
                     .exec(),
                   location: locations[locationsIndex],
                   branch,
+                  // TODO: extrapolate stepDepth from journey
+                  stepDepth: 1,
                 },
+                // These opts will be ignored
                 opts: {
                   jobId: generateUniqueJobId({
                     step: step,
@@ -508,20 +498,38 @@ export class CronService {
         await queryRunner.release();
       }
       if (!timeBasedErr) {
-        await this.waitUntilStepQueue.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.WAIT_UNTIL_BRANCH);
-          })
+        const jobDataFilter = (type, jobs): any[] => {
+          let filteredJobs = jobs.filter((job) => {
+            return job.name === String(type);
+          });
+
+          filteredJobs = filteredJobs.map((job) => job.data);
+
+          return filteredJobs;
+        };
+        const waitUntilJobsData = jobDataFilter(
+          StepType.WAIT_UNTIL_BRANCH,
+          timeBasedJobs
         );
-        await this.timeDelayStep.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.TIME_DELAY);
-          })
+        const timeDelayJobsData = jobDataFilter(
+          StepType.TIME_DELAY,
+          timeBasedJobs
         );
-        await this.timeWindowStep.addBulk(
-          timeBasedJobs.filter((job) => {
-            return job.name === String(StepType.TIME_WINDOW);
-          })
+        const timeWindowJobsData = jobDataFilter(
+          StepType.TIME_WINDOW,
+          timeBasedJobs
+        );
+
+        await Producer.addBulk(
+          QueueType.WAIT_UNTIL_STEP,
+          waitUntilJobsData
+        );
+        await Producer.addBulk(
+          QueueType.TIME_DELAY_STEP,
+          timeDelayJobsData);
+        await Producer.addBulk(
+          QueueType.TIME_WINDOW_STEP,
+          timeWindowJobsData
         );
       }
 
@@ -573,7 +581,7 @@ export class CronService {
           session,
           queryRunner
         );
-        const bulkJobs: { name: string; data: any }[] = [];
+        const bulkJobs: any[] = [];
         for (const requeue of requeuedMessages) {
           // THIS MIGHT BE SLOWER THAN WE WANT querying for the customer from mongo.
           // findAndLock only uses customer.id, but the function currently
@@ -590,18 +598,17 @@ export class CronService {
             queryRunner
           );
           await bulkJobs.push({
-            name: StepType.MESSAGE,
-            data: {
-              owner: requeue.workspace?.organization?.owner,
-              journey: requeue.step.journey,
-              step: requeue.step,
-              session,
-              customerID: requeue.customerId,
-            },
+            owner: requeue.workspace?.organization?.owner,
+            journey: requeue.step.journey,
+            step: requeue.step,
+            session,
+            customerID: requeue.customerId,
           });
           await queryRunner.manager.remove(requeue);
         }
-        await this.transitionQueue.addBulk(bulkJobs);
+        await Producer.addBulk(QueueType.MESSAGE_STEP,
+          bulkJobs,
+          StepType.MESSAGE)
         await queryRunner.commitTransaction();
       } catch (e) {
         requeueErr = e;
@@ -616,26 +623,6 @@ export class CronService {
         await queryRunner.release();
       }
     });
-  }
-
-  @Cron(CronExpression.EVERY_MINUTE)
-  printTimeoutLength() {
-    const session = randomUUID();
-    this.log(
-      `os.cpus().length: ${os.cpus().length}`,
-      this.printTimeoutLength.name,
-      session
-    );
-    this.log(
-      `DATABASE_MAX_CONNECTIONS: ${process.env.DATABASE_MAX_CONNECTIONS}`,
-      this.printTimeoutLength.name,
-      session
-    );
-    this.log(
-      `DEPLOY_MAX_REPLICAS: ${process.env.DEPLOY_MAX_REPLICAS}`,
-      this.printTimeoutLength.name,
-      session
-    );
   }
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -988,7 +975,7 @@ export class CronService {
   //             );
   //             for (let k = 0; k < events.items.length; k++) {
   //               const existsCheck = await this.clickHouseClient.query({
-  //                 query: `SELECT * FROM message_status WHERE event = {event:String} AND messageId = {messageId:String}`,
+  //                 query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = {event:String} AND messageId = {messageId:String}`,
   //                 query_params: {
   //                   event: events.items[k].event,
   //                   messageId: events.items[k].message.headers['message-id'],
@@ -997,7 +984,7 @@ export class CronService {
   //               const existsRows = JSON.parse(await existsCheck.text());
   //               if (existsRows.data.length == 0) {
   //                 const messageInfo = await this.clickHouseClient.query({
-  //                   query: `SELECT * FROM message_status WHERE messageId = {messageId:String} AND audienceId IS NOT NULL AND customerId IS NOT NULL AND templateId IS NOT NULL LIMIT 1`,
+  //                   query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE messageId = {messageId:String} AND audienceId IS NOT NULL AND customerId IS NOT NULL AND templateId IS NOT NULL LIMIT 1`,
   //                   query_params: {
   //                     messageId: events.items[k].message.headers['message-id'],
   //                   },
@@ -1020,7 +1007,7 @@ export class CronService {
   //                 };
   //                 messagesToInsert.push(clickHouseRecord);
   //                 await this.clickHouseClient.insert<ClickHouseMessage>({
-  //                   table: 'message_status',
+  //                   table: ${ClickHouseTable.MESSAGE_STATUS},
   //                   values: messagesToInsert,
   //                   format: 'JSONEachRow',
   //                 });
@@ -1070,7 +1057,7 @@ export class CronService {
   //               .sendgridApiKey
   //           );
   //           const resultSet = await this.clickHouseClient.query({
-  //             query: `SELECT * FROM message_status WHERE processed = false AND eventProvider = 'sendgrid' AND workspaceId = {workspaceId:String}`,
+  //             query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE processed = false AND eventProvider = 'sendgrid' AND workspaceId = {workspaceId:String}`,
   //             query_params: {
   //               workspaceId:
   //                 accounts[j].teams?.[0]?.organization?.workspaces?.[0].id,
@@ -1082,7 +1069,7 @@ export class CronService {
   //               const rowObject = JSON.parse(row.text);
   //               // Step 1: Check if the message has already reached an end state: delivered, undelivered, failed, canceled
   //               const existsCheck = await this.clickHouseClient.query({
-  //                 query: `SELECT * FROM message_status WHERE event IN ('dropped', 'bounce', 'blocked', 'open', 'click', 'spamreport', 'unsubscribe','group_unsubscribe','group_resubscribe') AND messageId = {messageId:String}`,
+  //                 query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event IN ('dropped', 'bounce', 'blocked', 'open', 'click', 'spamreport', 'unsubscribe','group_unsubscribe','group_resubscribe') AND messageId = {messageId:String}`,
   //                 query_params: { messageId: rowObject.messageId },
   //               });
   //               const existsRows = JSON.parse(await existsCheck.text());
@@ -1126,12 +1113,12 @@ export class CronService {
   //                   };
   //                   messagesToInsert.push(clickHouseRecord);
   //                   await this.clickHouseClient.insert<ClickHouseMessage>({
-  //                     table: 'message_status',
+  //                     table: ${ClickHouseTable.MESSAGE_STATUS},
   //                     values: messagesToInsert,
   //                     format: 'JSONEachRow',
   //                   });
   //                   await this.clickHouseClient.query({
-  //                     query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+  //                     query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
   //                     query_params: {
   //                       messageId: rowObject.messageId,
   //                       templateId: rowObject.templateId,
@@ -1145,7 +1132,7 @@ export class CronService {
   //               // Has reached end state using webhooks; update processed = true
   //               else {
   //                 await this.clickHouseClient.query({
-  //                   query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+  //                   query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
   //                   query_params: {
   //                     messageId: rowObject.messageId,
   //                     templateId: rowObject.templateId,
@@ -1198,7 +1185,7 @@ export class CronService {
   //             workspace.smsAuthToken
   //           );
   //           const resultSet = await this.clickHouseClient.query({
-  //             query: `SELECT * FROM message_status WHERE processed = false AND eventProvider = 'twilio' AND workspaceId = {workspaceId:String}`,
+  //             query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE processed = false AND eventProvider = 'twilio' AND workspaceId = {workspaceId:String}`,
   //             query_params: {
   //               workspaceId:
   //                 accounts[j].teams?.[0]?.organization?.workspaces?.[0]?.id,
@@ -1210,7 +1197,7 @@ export class CronService {
   //               const rowObject = JSON.parse(row.text);
   //               // Step 1: Check if the message has already reached an end state: delivered, undelivered, failed, canceled
   //               const existsCheck = await this.clickHouseClient.query({
-  //                 query: `SELECT * FROM message_status WHERE event IN ('delivered', 'undelivered', 'failed', 'canceled') AND messageId = {messageId:String}`,
+  //                 query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event IN ('delivered', 'undelivered', 'failed', 'canceled') AND messageId = {messageId:String}`,
   //                 query_params: { messageId: rowObject.messageId },
   //               });
   //               const existsRows = JSON.parse(await existsCheck.text());
@@ -1239,12 +1226,12 @@ export class CronService {
   //                   };
   //                   messagesToInsert.push(clickHouseRecord);
   //                   await this.clickHouseClient.insert<ClickHouseMessage>({
-  //                     table: 'message_status',
+  //                     table: ${ClickHouseTable.MESSAGE_STATUS},
   //                     values: messagesToInsert,
   //                     format: 'JSONEachRow',
   //                   });
   //                   await this.clickHouseClient.query({
-  //                     query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+  //                     query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
   //                     query_params: {
   //                       messageId: rowObject.messageId,
   //                       templateId: rowObject.templateId,
@@ -1255,7 +1242,7 @@ export class CronService {
   //                 }
   //               } else {
   //                 await this.clickHouseClient.query({
-  //                   query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+  //                   query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
   //                   query_params: {
   //                     messageId: rowObject.messageId,
   //                     templateId: rowObject.templateId,
@@ -1447,8 +1434,8 @@ export class CronService {
               const accountWithConnections: Account =
                 await queryRunner.manager.findOne(Account, {
                   where: {
-                    id: delayedJourneys[journeysIndex].workspace.organization.owner
-                      .id,
+                    id: delayedJourneys[journeysIndex].workspace.organization
+                      .owner.id,
                   },
                   relations: [
                     'teams.organization.workspaces',
@@ -1488,10 +1475,10 @@ export class CronService {
           // for (const collection of collectionNames) {
           //   await this.connection.dropCollection(collection);
           // }
-          if (triggerStartTasks?.job)
-            await this.startQueue.add(
-              triggerStartTasks.job.name,
-              triggerStartTasks.job.data
+          if (triggerStartTasks?.jobData)
+            await Producer.add(
+              QueueType.START,
+              triggerStartTasks.jobData
             );
         } catch (e) {
           this.error(e, this.handleEntryTiming.name, session);
@@ -2481,7 +2468,7 @@ export class CronService {
 //   //             );
 //   //             for (let k = 0; k < events.items.length; k++) {
 //   //               const existsCheck = await this.clickHouseClient.query({
-//   //                 query: `SELECT * FROM message_status WHERE event = {event:String} AND messageId = {messageId:String}`,
+//   //                 query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = {event:String} AND messageId = {messageId:String}`,
 //   //                 query_params: {
 //   //                   event: events.items[k].event,
 //   //                   messageId: events.items[k].message.headers['message-id'],
@@ -2490,7 +2477,7 @@ export class CronService {
 //   //               const existsRows = JSON.parse(await existsCheck.text());
 //   //               if (existsRows.data.length == 0) {
 //   //                 const messageInfo = await this.clickHouseClient.query({
-//   //                   query: `SELECT * FROM message_status WHERE messageId = {messageId:String} AND audienceId IS NOT NULL AND customerId IS NOT NULL AND templateId IS NOT NULL LIMIT 1`,
+//   //                   query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE messageId = {messageId:String} AND audienceId IS NOT NULL AND customerId IS NOT NULL AND templateId IS NOT NULL LIMIT 1`,
 //   //                   query_params: {
 //   //                     messageId: events.items[k].message.headers['message-id'],
 //   //                   },
@@ -2513,7 +2500,7 @@ export class CronService {
 //   //                 };
 //   //                 messagesToInsert.push(clickHouseRecord);
 //   //                 await this.clickHouseClient.insert<ClickHouseMessage>({
-//   //                   table: 'message_status',
+//   //                   table: ${ClickHouseTable.MESSAGE_STATUS},
 //   //                   values: messagesToInsert,
 //   //                   format: 'JSONEachRow',
 //   //                 });
@@ -2563,7 +2550,7 @@ export class CronService {
 //   //               .sendgridApiKey
 //   //           );
 //   //           const resultSet = await this.clickHouseClient.query({
-//   //             query: `SELECT * FROM message_status WHERE processed = false AND eventProvider = 'sendgrid' AND workspaceId = {workspaceId:String}`,
+//   //             query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE processed = false AND eventProvider = 'sendgrid' AND workspaceId = {workspaceId:String}`,
 //   //             query_params: {
 //   //               workspaceId:
 //   //                 accounts[j].teams?.[0]?.organization?.workspaces?.[0].id,
@@ -2575,7 +2562,7 @@ export class CronService {
 //   //               const rowObject = JSON.parse(row.text);
 //   //               // Step 1: Check if the message has already reached an end state: delivered, undelivered, failed, canceled
 //   //               const existsCheck = await this.clickHouseClient.query({
-//   //                 query: `SELECT * FROM message_status WHERE event IN ('dropped', 'bounce', 'blocked', 'open', 'click', 'spamreport', 'unsubscribe','group_unsubscribe','group_resubscribe') AND messageId = {messageId:String}`,
+//   //                 query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event IN ('dropped', 'bounce', 'blocked', 'open', 'click', 'spamreport', 'unsubscribe','group_unsubscribe','group_resubscribe') AND messageId = {messageId:String}`,
 //   //                 query_params: { messageId: rowObject.messageId },
 //   //               });
 //   //               const existsRows = JSON.parse(await existsCheck.text());
@@ -2619,12 +2606,12 @@ export class CronService {
 //   //                   };
 //   //                   messagesToInsert.push(clickHouseRecord);
 //   //                   await this.clickHouseClient.insert<ClickHouseMessage>({
-//   //                     table: 'message_status',
+//   //                     table: ${ClickHouseTable.MESSAGE_STATUS},
 //   //                     values: messagesToInsert,
 //   //                     format: 'JSONEachRow',
 //   //                   });
 //   //                   await this.clickHouseClient.query({
-//   //                     query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+//   //                     query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
 //   //                     query_params: {
 //   //                       messageId: rowObject.messageId,
 //   //                       templateId: rowObject.templateId,
@@ -2638,7 +2625,7 @@ export class CronService {
 //   //               // Has reached end state using webhooks; update processed = true
 //   //               else {
 //   //                 await this.clickHouseClient.query({
-//   //                   query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+//   //                   query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='sendgrid' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
 //   //                   query_params: {
 //   //                     messageId: rowObject.messageId,
 //   //                     templateId: rowObject.templateId,
@@ -2691,7 +2678,7 @@ export class CronService {
 //   //             workspace.smsAuthToken
 //   //           );
 //   //           const resultSet = await this.clickHouseClient.query({
-//   //             query: `SELECT * FROM message_status WHERE processed = false AND eventProvider = 'twilio' AND workspaceId = {workspaceId:String}`,
+//   //             query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE processed = false AND eventProvider = 'twilio' AND workspaceId = {workspaceId:String}`,
 //   //             query_params: {
 //   //               workspaceId:
 //   //                 accounts[j].teams?.[0]?.organization?.workspaces?.[0]?.id,
@@ -2703,7 +2690,7 @@ export class CronService {
 //   //               const rowObject = JSON.parse(row.text);
 //   //               // Step 1: Check if the message has already reached an end state: delivered, undelivered, failed, canceled
 //   //               const existsCheck = await this.clickHouseClient.query({
-//   //                 query: `SELECT * FROM message_status WHERE event IN ('delivered', 'undelivered', 'failed', 'canceled') AND messageId = {messageId:String}`,
+//   //                 query: `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event IN ('delivered', 'undelivered', 'failed', 'canceled') AND messageId = {messageId:String}`,
 //   //                 query_params: { messageId: rowObject.messageId },
 //   //               });
 //   //               const existsRows = JSON.parse(await existsCheck.text());
@@ -2732,12 +2719,12 @@ export class CronService {
 //   //                   };
 //   //                   messagesToInsert.push(clickHouseRecord);
 //   //                   await this.clickHouseClient.insert<ClickHouseMessage>({
-//   //                     table: 'message_status',
+//   //                     table: ${ClickHouseTable.MESSAGE_STATUS},
 //   //                     values: messagesToInsert,
 //   //                     format: 'JSONEachRow',
 //   //                   });
 //   //                   await this.clickHouseClient.query({
-//   //                     query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+//   //                     query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
 //   //                     query_params: {
 //   //                       messageId: rowObject.messageId,
 //   //                       templateId: rowObject.templateId,
@@ -2748,7 +2735,7 @@ export class CronService {
 //   //                 }
 //   //               } else {
 //   //                 await this.clickHouseClient.query({
-//   //                   query: `ALTER TABLE message_status UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
+//   //                   query: `ALTER TABLE ${ClickHouseTable.MESSAGE_STATUS} UPDATE processed=true WHERE eventProvider='twilio' AND event = 'sent' AND messageId = {messageId:String} AND templateId = {templateId:String} AND customerId = {customerId:String} AND audienceId = {audienceId:String}`,
 //   //                   query_params: {
 //   //                     messageId: rowObject.messageId,
 //   //                     templateId: rowObject.templateId,

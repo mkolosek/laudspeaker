@@ -320,7 +320,7 @@ export class EventsController {
   @Post('/batch/')
   @UseInterceptors(ClassSerializerInterceptor, new RavenInterceptor())
   @UseGuards(ApiKeyAuthGuard)
-  async testEndpoint(
+  async batchEndpoint(
     @Req() { user }: Request,
     @Body() body: any
   ): Promise<void | HttpException> {

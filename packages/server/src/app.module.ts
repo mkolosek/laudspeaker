@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TypeOrmConfigService } from './shared/typeorm/typeorm.service';
 import { ApiModule } from './api/api.module';
 import { WinstonModule } from 'nest-winston';
-import { BullModule } from '@nestjs/bullmq';
 import * as winston from 'winston';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthMiddleware } from './api/auth/middleware/auth.middleware';
@@ -62,6 +61,8 @@ import { OrganizationInvites } from './api/organizations/entities/organization-i
 import { redisStore } from 'cache-manager-redis-yet';
 import { CacheModule } from '@nestjs/cache-manager';
 import { HealthCheckService } from './app.healthcheck.service';
+import { QueueModule } from '@/common/services/queue/queue.module';
+import { ClickHouseModule } from '@/common/services/clickhouse/clickhouse.module';
 
 const sensitiveKeys = [
   /cookie/i,
@@ -122,15 +123,17 @@ const myFormat = winston.format.printf(function ({
   try {
     ctx = JSON.parse(context);
   } catch (e) {}
-  return `[${timestamp}] [${level}] [${process.env.LAUDSPEAKER_PROCESS_TYPE}]${
-    ctx?.class ? ' [Class: ' + ctx?.class + ']' : ''
-  }${ctx?.method ? ' [Method: ' + ctx?.method + ']' : ''}${
-    ctx?.session ? ' [User: ' + ctx?.user + ']' : ''
-  }${ctx?.session ? ' [Session: ' + ctx?.session + ']' : ''}: ${message} ${
-    stack ? '{stack: ' + stack : ''
-  } ${ctx.cause ? 'cause: ' + ctx.cause : ''} ${
-    ctx.message ? 'message: ' + ctx.message : ''
-  } ${ctx.name ? 'name: ' + ctx.name + '}' : ''}`;
+  return `[${timestamp}] [${level}] [${process.env.LAUDSPEAKER_PROCESS_TYPE}-${
+    process.pid
+  }]${ctx?.class ? ' [Class: ' + ctx?.class + ']' : ''}${
+    ctx?.method ? ' [Method: ' + ctx?.method + ']' : ''
+  }${ctx?.session ? ' [User: ' + ctx?.user + ']' : ''}${
+    ctx?.session ? ' [Session: ' + ctx?.session + ']' : ''
+  }: ${message} ${stack ? '{stack: ' + stack : ''} ${
+    ctx.cause ? 'cause: ' + ctx.cause : ''
+  } ${ctx.message ? 'message: ' + ctx.message : ''} ${
+    ctx.name ? 'name: ' + ctx.name + '}' : ''
+  }`;
 });
 
 export const formatMongoConnectionString = (mongoConnectionString: string) => {
@@ -162,9 +165,19 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
           }),
         ]
       : []),
-    MongooseModule.forRoot(
-      formatMongoConnectionString(process.env.MONGOOSE_URL)
-    ),
+    process.env.DOCUMENT_DB === 'true'
+      ? MongooseModule.forRoot(process.env.DOCUMENT_DB_CONNECTION_STRING, {
+          user: process.env.DOCUMENT_DB_USER,
+          pass: process.env.DOCUMENT_DB_PASS,
+          tls: true,
+          tlsCAFile: process.env.DOCUMENT_DB_CA_FILE,
+          tlsAllowInvalidHostnames: true,
+          directConnection: true,
+          retryWrites: false,
+        })
+      : MongooseModule.forRoot(
+          formatMongoConnectionString(process.env.MONGOOSE_URL)
+        ),
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({
@@ -178,16 +191,9 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
         }),
       }),
     }),
-    BullModule.forRoot({
+    QueueModule.forRoot({
       connection: {
-        host: process.env.REDIS_HOST ?? 'localhost',
-        port: parseInt(process.env.REDIS_PORT),
-        password: process.env.REDIS_PASSWORD,
-        retryStrategy: (times: number) => {
-          return Math.max(Math.min(Math.exp(times), 20000), 1000);
-        },
-        maxRetriesPerRequest: null,
-        enableOfflineQueue: true,
+        uri: process.env.RMQ_CONNECTION_URI ?? 'amqp://localhost',
       },
     }),
     // MorganLoggerModule,
@@ -233,44 +239,17 @@ export const formatMongoConnectionString = (mongoConnectionString: string) => {
       JourneyLocation,
       OrganizationInvites,
     ]),
-    BullModule.registerQueue({
-      name: '{integrations}',
-    }),
-    BullModule.registerQueue({
-      name: '{events}',
-    }),
-    BullModule.registerQueue({
-      name: '{customers}',
-    }),
-    BullModule.registerQueue({
-      name: '{message}',
-    }),
-    BullModule.registerQueue({
-      name: '{slack}',
-    }),
-    BullModule.registerQueue({
-      name: '{transition}',
-    }),
-    BullModule.registerQueue({
-      name: '{imports}',
-    }),
-    BullModule.registerQueue({
-      name: '{start}',
-    }),
-    BullModule.registerQueue({
-      name: '{wait.until.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.delay.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{time.window.step}',
-    }),
-    BullModule.registerQueue({
-      name: '{customer_change}',
-    }),
-    BullModule.registerQueue({
-      name: '{segment_update}',
+    ClickHouseModule.register({
+      url: process.env.CLICKHOUSE_HOST
+        ? process.env.CLICKHOUSE_HOST.includes('http')
+          ? process.env.CLICKHOUSE_HOST
+          : `http://${process.env.CLICKHOUSE_HOST}`
+        : 'http://localhost:8123',
+      username: process.env.CLICKHOUSE_USER ?? 'default',
+      password: process.env.CLICKHOUSE_PASSWORD ?? '',
+      database: process.env.CLICKHOUSE_DB ?? 'default',
+      max_open_connections: process.env.CLICKHOUSE_MAX_OPEN_CONNECTIONS ?? 10,
+      keep_alive: { enabled: true }
     }),
     IntegrationsModule,
     CustomersModule,

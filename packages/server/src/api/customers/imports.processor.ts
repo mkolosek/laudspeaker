@@ -1,4 +1,3 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Injectable } from '@nestjs/common';
 import { Job, MetricsTime } from 'bullmq';
 import { Account } from '../accounts/entities/accounts.entity';
@@ -16,26 +15,12 @@ import { Segment } from '../segments/entities/segment.entity';
 import { Repository } from 'typeorm';
 import { SegmentCustomers } from '../segments/entities/segment-customers.entity';
 import { randomUUID } from 'crypto';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 
 @Injectable()
-@Processor('{imports}', {
-  stalledInterval: process.env.IMPORTS_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.IMPORTS_PROCESSOR_STALLED_INTERVAL
-    : 30000,
-  removeOnComplete: {
-    age: 0,
-    count: process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.IMPORTS_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.IMPORTS_PROCESSOR_CONCURRENCY
-    ? +process.env.IMPORTS_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class ImportProcessor extends WorkerHost {
+@Processor('imports')
+export class ImportProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
@@ -201,7 +186,7 @@ export class ImportProcessor extends WorkerHost {
                 .finally(() => {
                   promiseSet.delete(batchId);
                 });
-              await new Promise((resolve) => setTimeout(resolve, 10000));
+
               batch = [];
               csvStream.resume();
             }
@@ -239,20 +224,23 @@ export class ImportProcessor extends WorkerHost {
                 return;
               }
             };
-            await checkAllBatchesCompleted();
+            interval = setInterval(checkAllBatchesCompleted, 200);
 
-            setInterval(checkAllBatchesCompleted, 200);
             setTimeout(() => {
               if (interval) clearInterval(interval);
               reject('Timeout while waiting for all batches to complete');
-            }, 5000);
+            }, 30000);
           })
           .on('error', (err) => {
             reject(err);
           });
         s3CSVStream.pipe(csvStream);
       });
-      await readPromise;
+
+      await readPromise.catch((error) => {
+        throw new Error(error);
+      });
+
       await this.customersService.removeImportFile(account);
 
       if (segmentId) {
@@ -261,6 +249,8 @@ export class ImportProcessor extends WorkerHost {
           isUpdating: false,
         });
       }
+
+      this.warn(`Import complete.`, this.process.name, session);
     } catch (error) {
       this.error(error, 'Processing customer import', session);
       throw error;
@@ -431,8 +421,9 @@ export class ImportProcessor extends WorkerHost {
 
       if (!segment) {
         this.error(
-          `Segment ${segmentId} doesn't exist in database`,
-          'Processing customer import -> moving to segment',
+          `Segment ${segmentId} doesn't exist in database,
+           Processing customer import -> moving to segment`,
+          this.processImportRecord.name,
           session
         );
         return;
@@ -441,7 +432,7 @@ export class ImportProcessor extends WorkerHost {
       await this.segmentCustomersRepository.insert(
         addToSegment.map((el) => ({
           customerId: el,
-          segment: segmentId, //segment,
+          segment: segment,
           workspace: workspace,
         }))
       );

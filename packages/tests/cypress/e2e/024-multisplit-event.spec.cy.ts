@@ -131,13 +131,13 @@ describe("multisplit event", () => {
             cy.wait(1000);
             drag("#webhook", ".empty-node:first", { fireDragOver: false });
             cy.wait(500);
-            cy.get("#template-select").select(1);
+            cy.get("#template-select").select("Webhook1");
             cy.get("#save-node-data").click();
 
             cy.wait(1000);
             drag("#webhook", ".empty-node:last", { fireDragOver: false });
             cy.wait(500);
-            cy.get("#template-select").select(2);
+            cy.get("#template-select").select("Webhook2");
             cy.get("#save-node-data").click();
             cy.get(".react-flow__node-waitUntil").click();
 
@@ -147,6 +147,8 @@ describe("multisplit event", () => {
             cy.get("#start-journey-button").click();
             cy.get("#journey-start-verify-button").click();
             cy.contains("Journey has been started").should("exist");
+
+            cy.wait(5000);
 
             cy.request({
               method: "POST",
@@ -159,7 +161,7 @@ describe("multisplit event", () => {
                 correlationValue: testCustomerUUID,
               },
             }).then(() => {
-              cy.wait(1000);
+              cy.wait(5000);
               cy.request({
                 method: "POST",
                 url: `${Cypress.env("TESTS_API_BASE_URL")}/events`,
@@ -287,13 +289,13 @@ describe("multisplit event", () => {
             cy.wait(1000);
             drag("#webhook", ".empty-node:first", { fireDragOver: false });
             cy.wait(500);
-            cy.get("#template-select").select(1);
+            cy.get("#template-select").select("Webhook1");
             cy.get("#save-node-data").click();
 
             cy.wait(1000);
             drag("#webhook", ".empty-node:last", { fireDragOver: false });
             cy.wait(500);
-            cy.get("#template-select").select(2);
+            cy.get("#template-select").select("Webhook2");
             cy.get("#save-node-data").click();
             cy.get(".react-flow__node-waitUntil").click();
 
@@ -304,6 +306,8 @@ describe("multisplit event", () => {
             cy.get("#journey-start-verify-button").click();
             cy.contains("Journey has been started").should("exist");
 
+            cy.wait(5000);
+            
             cy.request({
               method: "POST",
               url: `${Cypress.env("TESTS_API_BASE_URL")}/events`,

@@ -10,7 +10,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import twilio from 'twilio';
 import { WebhooksProcessor } from './webhooks.processor';
-import { BullModule } from '@nestjs/bullmq';
 import { TemplatesModule } from '../templates/templates.module';
 import { Step } from '../steps/entities/step.entity';
 import { Organization } from '../organizations/entities/organization.entity';
@@ -29,12 +28,6 @@ function getProvidersList() {
 @Module({
   imports: [
     TypeOrmModule.forFeature([Account, Step, Organization, OrganizationPlan]),
-    BullModule.registerQueue({
-      name: '{webhooks}',
-    }),
-    BullModule.registerQueue({
-      name: '{events_pre}',
-    }),
     TemplatesModule,
   ],
   providers: getProvidersList(),

@@ -12,6 +12,7 @@ import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 export enum SegmentType {
   AUTOMATIC = 'automatic',
   MANUAL = 'manual',
+  SYSTEM = 'system',
 }
 
 @Entity()

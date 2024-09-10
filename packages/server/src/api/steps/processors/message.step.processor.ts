@@ -5,9 +5,6 @@ import https from 'https';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
@@ -34,48 +31,25 @@ import { cleanTagsForSending } from '../../../shared/utils/helpers';
 import { MessageSender } from '../types/messagesender.class';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  ClickHouseEventProvider,
-  WebhooksService,
-} from '@/api/webhooks/webhooks.service';
+import { WebhooksService } from '@/api/webhooks/webhooks.service';
 import { OrganizationService } from '@/api/organizations/organizations.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
+import { ClickHouseEventProvider } from '@/common/services/clickhouse/types/clickhouse-event-provider';
 
 @Injectable()
-@Processor('{message.step}', {
-  stalledInterval: process.env.MESSAGE_STEP_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.MESSAGE_STEP_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: 0,
-    count: process.env.MESSAGE_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.MESSAGE_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.MESSAGE_STEP_PROCESSOR_CONCURRENCY
-    ? +process.env.MESSAGE_STEP_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class MessageStepProcessor extends WorkerHost {
+@Processor(
+  'message.step', {
+    maxRetries: {
+      count: 0,
+    }
+  })
+export class MessageStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start.step}') private readonly startStepQueue: Queue,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
-    @InjectQueue('{message.step}') private readonly messageStepQueue: Queue,
-    @InjectQueue('{jump.to.step}') private readonly jumpToStepQueue: Queue,
-    @InjectQueue('{time.delay.step}')
-    private readonly timeDelayStepQueue: Queue,
-    @InjectQueue('{time.window.step}')
-    private readonly timeWindowStepQueue: Queue,
-    @InjectQueue('{multisplit.step}')
-    private readonly multisplitStepQueue: Queue,
-    @InjectQueue('{experiment.step}')
-    private readonly experimentStepQueue: Queue,
-    @InjectQueue('{exit.step}') private readonly exitStepQueue: Queue,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
     @Inject(JourneysService)
@@ -89,7 +63,6 @@ export class MessageStepProcessor extends WorkerHost {
     private accountRepository: Repository<Account>,
     @Inject(WebhooksService)
     private readonly webhooksService: WebhooksService,
-    @InjectQueue('{webhooks}') private readonly webhooksQueue: Queue
   ) {
     super();
   }
@@ -153,57 +126,6 @@ export class MessageStepProcessor extends WorkerHost {
     );
   }
 
-  private processorMap: Record<
-    StepType,
-    (type: StepType, job: any) => Promise<void>
-  > = {
-    [StepType.START]: async (type, job) => {
-      await this.startStepQueue.add(type, job);
-    },
-    [StepType.EXPERIMENT]: async (type, job) => {
-      await this.experimentStepQueue.add(type, job);
-    },
-    [StepType.LOOP]: async (type, job) => {
-      await this.jumpToStepQueue.add(type, job);
-    },
-    [StepType.EXIT]: async (type, job) => {
-      await this.exitStepQueue.add(type, job);
-    },
-    [StepType.MULTISPLIT]: async (type, job) => {
-      await this.multisplitStepQueue.add(type, job);
-    },
-    [StepType.MESSAGE]: async (type: StepType, job: any) => {
-      await this.messageStepQueue.add(type, job);
-    },
-    [StepType.TIME_WINDOW]: async (type: StepType, job: any) => {
-      await this.timeWindowStepQueue.add(type, job);
-    },
-    [StepType.TIME_DELAY]: async (type: StepType, job: any) => {
-      await this.timeDelayStepQueue.add(type, job);
-    },
-    [StepType.WAIT_UNTIL_BRANCH]: async (type: StepType, job: any) => {
-      await this.waitUntilStepQueue.add(type, job);
-    },
-    [StepType.AB_TEST]: function (type: StepType, job: any): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.RANDOM_COHORT_BRANCH]: function (
-      type: StepType,
-      job: any
-    ): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.TRACKER]: function (type: StepType, job: any): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.ATTRIBUTE_BRANCH]: function (
-      type: StepType,
-      job: any
-    ): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-  };
-
   async process(
     job: Job<
       {
@@ -215,6 +137,7 @@ export class MessageStepProcessor extends WorkerHost {
         session: string;
         event?: string;
         branch?: number;
+        stepDepth: number;
       },
       any,
       string
@@ -226,13 +149,15 @@ export class MessageStepProcessor extends WorkerHost {
         let nextJob;
         const workspace =
           job.data.owner.teams?.[0]?.organization?.workspaces?.[0];
-        
-        const workspaceIds = job.data.owner.teams?.[0]?.organization?.workspaces?.map(workspace => workspace.id);
 
-        if(job.data.owner.teams?.[0]?.organization.plan.messageLimit != -1){
+        const workspaceIds =
+          job.data.owner.teams?.[0]?.organization?.workspaces?.map(
+            (workspace) => workspace.id
+          );
+
+        if (job.data.owner.teams?.[0]?.organization.plan.messageLimit != -1) {
           //off for now for perf reasons
-          // to do 
-
+          // to do
           //await this.organizationService.checkOrganizationMessageLimit(
           //  workspaceIds || [], 1 , job.data.owner.teams?.[0]?.organization.plan.messageLimit
           //);
@@ -390,13 +315,16 @@ export class MessageStepProcessor extends WorkerHost {
           switch (template.type) {
             case TemplateType.EMAIL:
               const mailgunChannel = workspace.mailgunConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
+                (connection) =>
+                  connection.id === job.data.step?.metadata?.connectionId
               );
               const sendgridChannel = workspace.sendgridConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
+                (connection) =>
+                  connection.id === job.data.step?.metadata?.connectionId
               );
               const resendChannel = workspace.resendConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
+                (connection) =>
+                  connection.id === job.data.step?.metadata?.connectionId
               );
 
               const emailProvider = mailgunChannel
@@ -429,17 +357,21 @@ export class MessageStepProcessor extends WorkerHost {
                 case 'mailgun':
                   key = mailgunChannel.apiKey;
                   sendingDomain = mailgunChannel.sendingDomain;
-                  const mailgunSendingOption = mailgunChannel.sendingOptions.find(
-                    ({ id }) => id === job.data.step?.metadata?.sendingOptionId
-                  );
+                  const mailgunSendingOption =
+                    mailgunChannel.sendingOptions.find(
+                      ({ id }) =>
+                        id === job.data.step?.metadata?.sendingOptionId
+                    );
                   from = mailgunSendingOption.sendingName;
                   sendingEmail = mailgunSendingOption.sendingEmail;
                   break;
                 case 'sendgrid':
                   key = sendgridChannel.apiKey;
-                  const sendgridSendingOption = sendgridChannel.sendingOptions.find(
-                    ({ id }) => id === job.data.step?.metadata?.sendingOptionId
-                  );
+                  const sendgridSendingOption =
+                    sendgridChannel.sendingOptions.find(
+                      ({ id }) =>
+                        id === job.data.step?.metadata?.sendingOptionId
+                    );
                   from = sendgridSendingOption.sendingEmail;
                   break;
                 case 'resend':
@@ -498,9 +430,10 @@ export class MessageStepProcessor extends WorkerHost {
               // }
               break;
             case TemplateType.PUSH:
-              const pushChannel = workspace.pushConnections.find(
-                (connection) => connection.id === job.data.step?.metadata?.connectionId
-              );
+              // Temporarily disabling until we have ability to select push channel in UI
+              // const pushChannel = workspace.pushConnections.find(
+              //   (connection) => connection.id === job.data.step?.metadata?.connectionId
+              // );
 
               switch (job.data.step.metadata.selectedPlatform) {
                 case 'All':
@@ -511,7 +444,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.Android?.credentials,
+                        workspace?.pushPlatforms?.Android?.credentials,
+                      // pushChannel?.pushPlatforms?.Android?.credentials,
                       deviceToken: job.data.customer.androidDeviceToken,
                       pushTitle: template.pushObject.settings.Android.title,
                       pushText:
@@ -535,7 +469,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.iOS?.credentials,
+                        workspace?.pushPlatforms?.iOS?.credentials,
+                      // pushChannel?.pushPlatforms?.iOS?.credentials,
                       deviceToken: job.data.customer.iosDeviceToken,
                       pushTitle: template.pushObject.settings.iOS.title,
                       pushText: template.pushObject.settings.iOS.description,
@@ -560,7 +495,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.iOS?.credentials,
+                        workspace?.pushPlatforms?.iOS?.credentials,
+                      // pushChannel?.pushPlatforms?.iOS?.credentials,
                       deviceToken: job.data.customer.iosDeviceToken,
                       pushTitle: template.pushObject.settings.iOS.title,
                       pushText: template.pushObject.settings.iOS.description,
@@ -585,7 +521,8 @@ export class MessageStepProcessor extends WorkerHost {
                       stepID: job.data.step.id,
                       customerID: job.data.customer._id,
                       firebaseCredentials:
-                        pushChannel?.pushPlatforms?.Android?.credentials,
+                        workspace?.pushPlatforms?.Android?.credentials,
+                      // pushChannel?.pushPlatforms?.Android?.credentials,
                       deviceToken: job.data.customer.androidDeviceToken,
                       pushTitle: template.pushObject.settings.Android.title,
                       pushText:
@@ -631,13 +568,19 @@ export class MessageStepProcessor extends WorkerHost {
               break;
             case TemplateType.WEBHOOK: //TODO:remove this from queue
               if (template.webhookData) {
-                await this.webhooksQueue.add('whapicall', {
+                const webhookJobData = {
                   template,
                   filteredTags,
                   stepId: job.data.step.id,
                   customerId: job.data.customer._id,
                   accountId: job.data.owner.id,
-                });
+                  stepDepth: job.data.stepDepth,
+                };
+
+                await Producer.add(
+                  QueueType.WEBHOOKS,
+                  webhookJobData
+                );
               }
               break;
           }
@@ -745,6 +688,9 @@ export class MessageStepProcessor extends WorkerHost {
         );
 
         if (nextStep) {
+          const nextStepDepth: number =
+            Producer.getNextStepDepthFromJob(job);
+
           if (
             nextStep.type !== StepType.TIME_DELAY &&
             nextStep.type !== StepType.TIME_WINDOW &&
@@ -758,6 +704,7 @@ export class MessageStepProcessor extends WorkerHost {
               customer: job.data.customer,
               location: job.data.location,
               event: job.data.event,
+              stepDepth: nextStepDepth,
             };
           } else {
             // Destination is time based,
@@ -776,7 +723,7 @@ export class MessageStepProcessor extends WorkerHost {
           );
         }
         if (nextStep && nextJob)
-          await this.processorMap[nextStep.type](nextStep.type, nextJob);
+          await Producer.addByStepType(nextStep.type, nextJob);
       }
     );
   }

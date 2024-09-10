@@ -31,11 +31,11 @@ export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
     );
 
     stream.on('error', async () => {
-      throw "Error running migration";
+      throw 'Error running migration';
     });
 
     stream.on('data', async (record) => {
-      await this.processJourney(queryRunner, record)
+      await this.processJourney(queryRunner, record);
     });
   }
 
@@ -78,8 +78,7 @@ export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
             });
             if (!step) continue;
 
-            if(!step.metadata)
-              step.metadata = {};
+            if (!step.metadata) step.metadata = {};
 
             step.metadata.connectionId = connectionId;
             step.metadata.sendingOptionId = sendingOptionId;
@@ -92,8 +91,7 @@ export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
             });
             if (!smsStep) continue;
 
-            if(!smsStep.metadata)
-              smsStep.metadata = {};
+            if (!smsStep.metadata) smsStep.metadata = {};
 
             smsStep.metadata.connectionId = record.twilioConnectionId;
             await queryRunner.manager.save(smsStep);
@@ -104,9 +102,8 @@ export class UpdateVisualLayoutAndStepMetadataWithConnections1717127092947
               id: node.data.stepId,
             });
             if (!pushStep) continue;
-            
-            if(!pushStep.metadata)
-              pushStep.metadata = {};
+
+            if (!pushStep.metadata) pushStep.metadata = {};
 
             pushStep.metadata.connectionId = record.pushConnectionId;
             await queryRunner.manager.save(pushStep);

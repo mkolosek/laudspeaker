@@ -9,7 +9,6 @@ import {
   BadRequestException,
   NotFoundException,
 } from '@nestjs/common/exceptions';
-import { createClient } from '@clickhouse/client';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import Mailgun from 'mailgun.js';
 import formData from 'form-data';
@@ -18,11 +17,10 @@ import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import { Step } from '../steps/entities/step.entity';
 import { EventWebhook } from '@sendgrid/eventwebhook';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Webhook } from 'svix';
 import fetch from 'node-fetch'; // Ensure you have node-fetch if you're using Node.js
-import { ProviderType } from '../events/events.preprocessor';
+import { ProviderType } from '../events/processors/events.preprocessor';
 import { Organization } from '../organizations/entities/organization.entity';
 import {
   DEFAULT_PLAN,
@@ -30,30 +28,14 @@ import {
 } from '../organizations/entities/organization-plan.entity';
 import * as Sentry from '@sentry/node';
 import Stripe from 'stripe';
-
-export enum ClickHouseEventProvider {
-  MAILGUN = 'mailgun',
-  SENDGRID = 'sendgrid',
-  TWILIO = 'twilio',
-  SLACK = 'slack',
-  PUSH = 'PUSH',
-  WEBHOOKS = 'webhooks',
-  TRACKER = 'tracker',
-  RESEND = 'resend',
-}
-
-export interface ClickHouseMessage {
-  audienceId?: string;
-  stepId?: string;
-  createdAt: Date;
-  customerId: string;
-  event: string;
-  eventProvider: ClickHouseEventProvider;
-  messageId: string;
-  templateId: string;
-  workspaceId: string;
-  processed: boolean;
-}
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  ClickHouseTable,
+  ClickHouseEventProvider,
+  ClickHouseMessage,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
 
 @Injectable()
 export class WebhooksService {
@@ -73,16 +55,6 @@ export class WebhooksService {
   };
 
   private stripeClient = new Stripe.Stripe(process.env.STRIPE_SECRET_KEY);
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
 
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -95,8 +67,8 @@ export class WebhooksService {
     private organizationRepository: Repository<Organization>,
     @InjectRepository(OrganizationPlan)
     private organizationPlanRepository: Repository<OrganizationPlan>,
-    @InjectQueue('{events_pre}')
-    private readonly eventPreprocessorQueue: Queue
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {
     const session = randomUUID();
     (async () => {
@@ -394,7 +366,7 @@ export class WebhooksService {
     };
 
     this.debug(
-      `${JSON.stringify({ clickhouseMessage: clickHouseRecord })}`,
+      `${JSON.stringify({ ClickHouseMessage: clickHouseRecord })}`,
       this.processMailgunData.name,
       session
     );
@@ -465,47 +437,46 @@ export class WebhooksService {
       { name: 'WebhooksService.insertMessageStatusToClickhouse' },
       async () => {
         if (clickhouseMessages?.length) {
-          await this.eventPreprocessorQueue.addBulk(
-            clickhouseMessages.map((element) => {
-              return {
-                name: ProviderType.MESSAGE,
-                data: {
-                  workspaceId: element.workspaceId,
-                  message: element,
-                  session: session,
-                  customer: element.customerId,
-                },
-              };
-            })
-          );
-          
-          await this.clickhouseClient.insert({
-            table: "message_status",
+          const jobsData = clickhouseMessages.map((element) => {
+            return {
+              workspaceId: element.workspaceId,
+              message: element,
+              session: session,
+              customer: element.customerId,
+            };
+          });
+
+          // await Producer.addBulk(
+          //   QueueType.EVENTS_PRE,
+          //   jobsData,
+          //   ProviderType.MESSAGE
+          // );
+
+          await this.clickhouseClient.insertAsync({
+            table: ClickHouseTable.MESSAGE_STATUS,
             values: clickhouseMessages,
             format: 'JSONEachRow',
-            clickhouse_settings: {
-              date_time_input_format: "best_effort",
-              async_insert: 1,
-              wait_for_async_insert: 1,
-              async_insert_max_data_size: 
-                process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_MAX_SIZE || '1000000',
-              async_insert_busy_timeout_ms:
-                process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_TIMEOUT_MS ?
-                +process.env.CLICKHOUSE_MESSAGE_STATUS_ASYNC_TIMEOUT_MS : 1000,
-            }
           });
         }
       }
     );
   }
 
-  public async processStripePayment(payload: Buffer, signature: string, session: string): Promise<any> {
+  public async processStripePayment(
+    payload: Buffer,
+    signature: string,
+    session: string
+  ): Promise<any> {
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
     let event: Stripe.Event;
     try {
       // Verify the event by constructing it using the Stripe library
-      event = this.stripeClient.webhooks.constructEvent(payload, signature, endpointSecret);
+      event = this.stripeClient.webhooks.constructEvent(
+        payload,
+        signature,
+        endpointSecret
+      );
     } catch (err) {
       // If the event is unverified, throw an error with a suggestion to retry
       //throw new HttpException('Webhook Error: Unable to verify Stripe signature.', HttpStatus.BAD_REQUEST);
@@ -515,26 +486,30 @@ export class WebhooksService {
       // Handle the verified event type
       switch (event.type) {
         case 'payment_intent.succeeded':
-          const paymentIntent: Stripe.PaymentIntent = event.data.object as Stripe.PaymentIntent;
+          const paymentIntent: Stripe.PaymentIntent = event.data
+            .object as Stripe.PaymentIntent;
           //this.handlePaymentIntentSucceeded(paymentIntent);
           break;
         case 'payment_intent.payment_failed':
-          const paymentIntentFailed: Stripe.PaymentIntent = event.data.object as Stripe.PaymentIntent;
+          const paymentIntentFailed: Stripe.PaymentIntent = event.data
+            .object as Stripe.PaymentIntent;
           //this.handlePaymentIntentFailed(paymentIntentFailed);
           break;
         // Add more handlers as necessary
         case 'checkout.session.completed':
           //console.log('this is the event we care about');
           //console.log(JSON.stringify(event,null, 2));
-          
+
           //console.log('^^ is the event we care about');
-          const accountId = event.data.object.metadata.accountId
+          const accountId = event.data.object.metadata.accountId;
           if (!accountId) {
-            this.logger.warn('No accountId found in metadata for checkout.session.completed');
+            this.logger.warn(
+              'No accountId found in metadata for checkout.session.completed'
+            );
             return;
           }
           this.debug(
-            `the checkout session event is ${JSON.stringify(event,null, 2)})}`,
+            `the checkout session event is ${JSON.stringify(event, null, 2)})}`,
             this.processStripePayment.name,
             session,
             accountId
@@ -542,11 +517,13 @@ export class WebhooksService {
           // Find the related organization using the accountId
           const organization = await this.organizationRepository.findOne({
             where: { owner: { id: accountId } },
-            relations: ['plan']
+            relations: ['plan'],
           });
 
           if (!organization) {
-            this.logger.warn(`No organization found for accountId: ${accountId}`);
+            this.logger.warn(
+              `No organization found for accountId: ${accountId}`
+            );
             return;
           }
           // Update the plan to subscribed and active
@@ -554,7 +531,9 @@ export class WebhooksService {
           plan.subscribed = true;
           plan.activePlan = true;
           await this.organizationPlanRepository.save(plan);
-          this.logger.log(`Updated plan for organization ${organization.id} to active and subscribed`);
+          this.logger.log(
+            `Updated plan for organization ${organization.id} to active and subscribed`
+          );
           break;
         default:
           //console.log(`Unhandled event type: ${event.type}`);
@@ -568,5 +547,4 @@ export class WebhooksService {
     // Return a generic response or something more specific if you prefer
     return { received: true };
   }
-
 }

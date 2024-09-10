@@ -38,6 +38,11 @@ interface MessageChannelCardFixture {
   additionalInfo?: MessageChannelAdditionalInfoFixture[];
 }
 
+interface PushPlatform {
+  fileName: string;
+  isTrackingDisabled: boolean;
+}
+
 // const emailServiceToAdditionalInfoMap: Record<
 //   EmailSendingService,
 //   MessageChannelAdditionalInfoFixture[]
@@ -138,6 +143,14 @@ const MessageChannelTab = () => {
       title: connection.name,
       icon: emailCardIconImage,
     })) || []),
+    ...(Object.entries(account?.workspace.pushPlatforms || {}).map(
+      ([key, connection]: [string, PushPlatform]) => ({
+        id: key, // Using the key as an ID or adjust as needed
+        channel: MessageChannel.PUSH,
+        title: connection.fileName, // Adjust this if you need a different title
+        icon: pushLogoIcon,
+      })
+    ) || []),
   ];
 
   const supportedFixtures = Object.values(supportedMessageChannelCardsFixtures);
@@ -162,9 +175,14 @@ const MessageChannelTab = () => {
       <div className="text-[#4B5563]">
         Browse the available channels in Laudspeaker, and set up the channels
         you want to use{" "}
-        <button className="text-[#111827] font-bold underline">
+        <a
+          href="https://laudspeaker.com/docs/getting-started/setting-up-mobile-push"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[#111827] font-bold underline"
+        >
           Documentation
-        </button>
+        </a>
       </div>
 
       <div className="w-full h-[1px] bg-[#E5E7EB]" />

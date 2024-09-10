@@ -32,11 +32,15 @@ export class Organization extends BaseEntity {
   public teams: OrganizationTeam[];
 
   @JoinColumn()
-  @OneToOne(() => OrganizationPlan, (organizationPlan) => organizationPlan.organization, {
-    onDelete: 'CASCADE',
-    onUpdate: 'CASCADE',
-    nullable: false,
-  })
+  @OneToOne(
+    () => OrganizationPlan,
+    (organizationPlan) => organizationPlan.organization,
+    {
+      onDelete: 'CASCADE',
+      onUpdate: 'CASCADE',
+      nullable: false,
+    }
+  )
   public plan: OrganizationPlan;
 
   @OneToMany(() => Workspaces, (workspace) => workspace.organization, {
@@ -47,5 +51,4 @@ export class Organization extends BaseEntity {
   @JoinColumn()
   @OneToOne(() => Account, (account) => account.id, { onDelete: 'CASCADE' })
   public owner: Account;
-
 }

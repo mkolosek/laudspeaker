@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { EmailController } from './email.controller';
 import { MessageProcessor } from './email.processor';
-import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Audience } from '../audiences/entities/audience.entity';
@@ -26,9 +25,6 @@ function getProvidersList() {
 
 @Module({
   imports: [
-    BullModule.registerQueue({
-      name: '{message}',
-    }),
     TypeOrmModule.forFeature([Account, Audience]),
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
@@ -36,9 +32,6 @@ function getProvidersList() {
     MongooseModule.forFeature([
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
-    BullModule.registerQueue({
-      name: '{customers}',
-    }),
     CustomersModule,
     WebhooksModule,
   ],

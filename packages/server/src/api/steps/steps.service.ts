@@ -8,10 +8,8 @@ import { Account } from '../accounts/entities/accounts.entity';
 import { CustomerDocument } from '../customers/schemas/customer.schema';
 import Errors from '../../shared/utils/errors';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { StepType } from './types/step.interface';
-import { createClient } from '@clickhouse/client';
 import { Requeue } from './entities/requeue.entity';
 import { JourneyLocationsService } from '../journeys/journey-locations.service';
 import { CustomersService } from '../customers/customers.service';
@@ -19,19 +17,14 @@ import { Journey } from '../journeys/entities/journey.entity';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose, { ClientSession } from 'mongoose';
 import * as Sentry from '@sentry/node';
+import {
+  ClickHouseTable,
+  ClickHouseClient
+} from '@/common/services/clickhouse';
+import { CacheService } from '@/common/services/cache.service';
 
 @Injectable()
 export class StepsService {
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
   /**
    * Step service constructor; this class is the only class that should
    * be using the Steps repository (`Repository<Step>`) directly.
@@ -46,12 +39,13 @@ export class StepsService {
     public stepsRepository: Repository<Step>,
     @InjectRepository(Requeue)
     public requeueRepository: Repository<Requeue>,
-    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
-    @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
     @Inject(forwardRef(() => CustomersService))
-    private readonly customersService: CustomersService
+    private readonly customersService: CustomersService,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
+    @Inject(CacheService) private cacheService: CacheService,
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -157,20 +151,18 @@ export class StepsService {
     client?: any,
     session?: string,
     collectionName?: string
-  ): Promise<{ collectionName: string; job: { name: string; data: any } }> {
+  ): Promise<{ collectionName: string; jobData: any }> {
     return Sentry.startSpan({ name: 'StepsService.triggerStart' }, async () => {
       const workspace = account?.teams?.[0]?.organization?.workspaces?.[0];
 
-      const startStep = await queryRunner.manager.find(Step, {
-        where: {
-          workspace: { id: workspace.id },
-          journey: { id: journey.id },
-          type: StepType.START,
-        },
-      });
+      const startStep = await this.getStartStep(
+        account,
+        journey,
+        session,
+        queryRunner);
 
-      if (startStep.length !== 1)
-        throw new Error('Can only have one start step per journey.');
+      if (!startStep)
+        throw new Error('Could not find start step.');
 
       const CUSTOMERS_PER_BATCH = 50000;
       let batch = 0;
@@ -197,7 +189,7 @@ export class StepsService {
           customers.map((document) => {
             return document._id.toString();
           }),
-          startStep[0],
+          startStep,
           session,
           account,
           queryRunner,
@@ -207,18 +199,15 @@ export class StepsService {
 
       return {
         collectionName,
-        job: {
-          name: 'start',
-          data: {
-            owner: account,
-            step: startStep[0],
-            journey,
-            session: session,
-            query,
-            skip: 0,
-            limit: audienceSize,
-            collectionName,
-          },
+        jobData: {
+          owner: account,
+          step: startStep[0],
+          journey,
+          session: session,
+          query,
+          skip: 0,
+          limit: audienceSize,
+          collectionName,
         },
       };
     });
@@ -403,7 +392,7 @@ export class StepsService {
     try {
       let query = this.stepsRepository
         .createQueryBuilder('step')
-        .where({ journey: journeyID })
+        .where({ journeyId: journeyID })
         .andWhere("metadata -> 'destination' IS NULL")
         .andWhere("metadata -> 'timeBranch' -> 'destination' IS NULL")
         .andWhere(`NOT EXISTS (
@@ -456,15 +445,45 @@ export class StepsService {
   }
 
   /**
-   * Find a step by its ID.
+   * Finds the start step by journey and workspace. Caches the step for next lookup
    * @param account
-   * @param id
+   * @param journeyId
+   * @param session
+   * @returns
+   */
+  async getStartStep(
+    account: Account,
+    journey: Journey,
+    session: string,
+    queryRunner?: QueryRunner
+  ): Promise<Step | null> {
+    const startStep = await this.cacheService.getIgnoreError(
+      'JourneyWorkspaceStartStep',
+      journey.id,
+      async () => {
+        return await this.findByJourneyAndType(
+          account,
+          journey,
+          StepType.START,
+          session,
+          queryRunner);
+        }
+    );
+
+    return startStep;
+  }
+
+  /**
+   * Find a step by journey, workspace and type
+   * @param account
+   * @param journey
+   * @param type
    * @param session
    * @returns
    */
   async findByJourneyAndType(
     account: Account,
-    journey: string,
+    journey: Journey,
     type: StepType,
     session: string,
     queryRunner?: QueryRunner
@@ -474,16 +493,16 @@ export class StepsService {
     if (queryRunner) {
       return await queryRunner.manager.findOne(Step, {
         where: {
-          journey: { id: journey },
-          workspace: { id: workspace.id },
+          journeyId: journey.id,
+          workspaceId: workspace.id,
           type: type,
         },
       });
     } else {
       return await this.stepsRepository.findOne({
         where: {
-          journey: { id: journey },
-          workspace: { id: workspace.id },
+          journeyId: journey.id,
+          workspaceId: workspace.id,
           type: type,
         },
       });
@@ -739,21 +758,21 @@ export class StepsService {
   async getStats(account: Account, session: string, stepId?: string) {
     if (!stepId) return {};
     const sentResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(*) AS count FROM message_status WHERE event = 'sent' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(*) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'sent' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const sentData = (await sentResponse.json<any>())?.data;
     const sent = +sentData[0].count;
 
     const deliveredResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(*) AS count FROM message_status WHERE event = 'delivered' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(*) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'delivered' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const deliveredData = (await deliveredResponse.json<any>())?.data;
     const delivered = +deliveredData[0].count;
 
     const openedResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM message_status WHERE event = 'opened' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'opened' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const openedData = (await openedResponse.json<any>())?.data;
@@ -762,7 +781,7 @@ export class StepsService {
     const openedPercentage = (opened / sent) * 100;
 
     const clickedResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM message_status WHERE event = 'clicked' AND stepId = {stepId:UUID}`,
+      query: `SELECT COUNT(DISTINCT(stepId, customerId, templateId, messageId, event, eventProvider)) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'clicked' AND stepId = {stepId:UUID}`,
       query_params: { stepId },
     });
     const clickedData = (await clickedResponse.json<any>())?.data;
@@ -771,7 +790,7 @@ export class StepsService {
     const clickedPercentage = (clicked / sent) * 100;
 
     const whResponse = await this.clickhouseClient.query({
-      query: `SELECT COUNT(*) AS count FROM message_status WHERE event = 'sent' AND stepId = {stepId:UUID} AND eventProvider = 'webhooks' `,
+      query: `SELECT COUNT(*) AS count FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE event = 'sent' AND stepId = {stepId:UUID} AND eventProvider = 'webhooks' `,
       query_params: {
         stepId,
       },

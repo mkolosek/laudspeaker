@@ -10,7 +10,7 @@ export class Customer {
   @Prop()
   _id: string;
 
-  @Prop({ index: true })
+  @Prop()
   other_ids: string[];
 
   @Prop()
@@ -123,6 +123,9 @@ export class Customer {
 
   @Prop(raw({}))
   customComponents: Record<string, any>;
+
+  @Prop()
+  laudspeakerSystemSource: string;
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);

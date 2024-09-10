@@ -3,9 +3,6 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
@@ -26,49 +23,26 @@ import { Journey } from '@/api/journeys/entities/journey.entity';
 import { JourneyLocation } from '@/api/journeys/entities/journey-location.entity';
 import { CacheService } from '@/common/services/cache.service';
 import { CustomersService } from '@/api/customers/customers.service';
+import { SegmentCustomersService } from '@/api/segments/segment-customers.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@Processor('{multisplit.step}', {
-  stalledInterval: process.env.MULTISPLIT_STEP_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.MULTISPLIT_STEP_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: 0,
-    count: process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.MULTISPLIT_STEP_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.MULTISPLIT_STEP_PROCESSOR_CONCURRENCY
-    ? +process.env.MULTISPLIT_STEP_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class MultisplitStepProcessor extends WorkerHost {
+@Processor('multisplit.step')
+export class MultisplitStepProcessor extends ProcessorBase {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start.step}') private readonly startStepQueue: Queue,
-    @InjectQueue('{wait.until.step}')
-    private readonly waitUntilStepQueue: Queue,
-    @InjectQueue('{message.step}') private readonly messageStepQueue: Queue,
-    @InjectQueue('{jump.to.step}') private readonly jumpToStepQueue: Queue,
-    @InjectQueue('{time.delay.step}')
-    private readonly timeDelayStepQueue: Queue,
-    @InjectQueue('{time.window.step}')
-    private readonly timeWindowStepQueue: Queue,
-    @InjectQueue('{multisplit.step}')
-    private readonly multisplitStepQueue: Queue,
-    @InjectQueue('{experiment.step}')
-    private readonly experimentStepQueue: Queue,
-    @InjectQueue('{exit.step}') private readonly exitStepQueue: Queue,
     @InjectModel(Customer.name) public customerModel: Model<CustomerDocument>,
     @Inject(JourneyLocationsService)
     private journeyLocationsService: JourneyLocationsService,
     @Inject(StepsService) private stepsService: StepsService,
     @Inject(CacheService) private cacheService: CacheService,
-    @Inject(CustomersService) private customersService: CustomersService
+    @Inject(CustomersService) private customersService: CustomersService,
+    @Inject(SegmentCustomersService)
+    private segmentCustomersService: SegmentCustomersService
   ) {
     super();
   }
@@ -132,57 +106,6 @@ export class MultisplitStepProcessor extends WorkerHost {
     );
   }
 
-  private processorMap: Record<
-    StepType,
-    (type: StepType, job: any) => Promise<void>
-  > = {
-    [StepType.START]: async (type, job) => {
-      await this.startStepQueue.add(type, job);
-    },
-    [StepType.EXPERIMENT]: async (type, job) => {
-      await this.experimentStepQueue.add(type, job);
-    },
-    [StepType.LOOP]: async (type, job) => {
-      await this.jumpToStepQueue.add(type, job);
-    },
-    [StepType.EXIT]: async (type, job) => {
-      await this.exitStepQueue.add(type, job);
-    },
-    [StepType.MULTISPLIT]: async (type, job) => {
-      await this.multisplitStepQueue.add(type, job);
-    },
-    [StepType.MESSAGE]: async (type: StepType, job: any) => {
-      await this.messageStepQueue.add(type, job);
-    },
-    [StepType.TIME_WINDOW]: async (type: StepType, job: any) => {
-      await this.timeWindowStepQueue.add(type, job);
-    },
-    [StepType.TIME_DELAY]: async (type: StepType, job: any) => {
-      await this.timeDelayStepQueue.add(type, job);
-    },
-    [StepType.WAIT_UNTIL_BRANCH]: async (type: StepType, job: any) => {
-      await this.waitUntilStepQueue.add(type, job);
-    },
-    [StepType.AB_TEST]: function (type: StepType, job: any): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.RANDOM_COHORT_BRANCH]: function (
-      type: StepType,
-      job: any
-    ): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.TRACKER]: function (type: StepType, job: any): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-    [StepType.ATTRIBUTE_BRANCH]: function (
-      type: StepType,
-      job: any
-    ): Promise<void> {
-      throw new Error('Function not implemented.');
-    },
-  };
-
   async process(
     job: Job<
       {
@@ -194,6 +117,7 @@ export class MultisplitStepProcessor extends WorkerHost {
         session: string;
         event?: string;
         branch?: number;
+        stepDepth: number;
       },
       any,
       string
@@ -213,11 +137,10 @@ export class MultisplitStepProcessor extends WorkerHost {
           branchIndex++
         ) {
           if (
-            await this.customersService.checkCustomerMatchesQuery(
-              job.data.step.metadata.branches[branchIndex].conditions.query,
+            await this.segmentCustomersService.isCustomerInSegment(
               job.data.owner,
-              job.data.session,
-              job.data.customer
+              job.data.step.metadata.branches[branchIndex].systemSegment,
+              job.data.customer._id
             )
           ) {
             matches = true;
@@ -237,6 +160,9 @@ export class MultisplitStepProcessor extends WorkerHost {
         );
 
         if (nextStep) {
+          const nextStepDepth: number =
+            Producer.getNextStepDepthFromJob(job);
+
           if (
             nextStep.type !== StepType.TIME_DELAY &&
             nextStep.type !== StepType.TIME_WINDOW &&
@@ -250,6 +176,7 @@ export class MultisplitStepProcessor extends WorkerHost {
               customer: job.data.customer,
               location: job.data.location,
               event: job.data.event,
+              stepDepth: nextStepDepth,
             };
           } else {
             // Destination is time based,
@@ -269,7 +196,7 @@ export class MultisplitStepProcessor extends WorkerHost {
         }
 
         if (nextStep && nextJob)
-          await this.processorMap[nextStep.type](nextStep.type, nextJob);
+          await Producer.addByStepType(nextStep.type, nextJob);
       }
     );
   }

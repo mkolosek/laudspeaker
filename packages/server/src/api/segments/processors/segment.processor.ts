@@ -2,63 +2,51 @@ import { Inject, Logger, forwardRef } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
   OnWorkerEvent,
-  InjectQueue,
 } from '@nestjs/bullmq';
 import { Job, MetricsTime, Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
 import * as _ from 'lodash';
 import * as Sentry from '@sentry/node';
 import { Account } from '../../accounts/entities/accounts.entity';
-import { Segment } from '../entities/segment.entity';
+import { Segment, SegmentType } from '../entities/segment.entity';
 import { SegmentsService } from '../segments.service';
-import { CustomersService } from '@/api/customers/customers.service';
+import { CustomersService } from '../../customers/customers.service';
 import { CreateSegmentDTO } from '../dto/create-segment.dto';
 import { InjectConnection } from '@nestjs/mongoose';
 import mongoose from 'mongoose';
 import { SegmentCustomers } from '../entities/segment-customers.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { UpdateSegmentDTO } from '../dto/update-segment.dto';
-import { Workspaces } from '@/api/workspaces/entities/workspaces.entity';
+import { Workspaces } from '../../workspaces/entities/workspaces.entity';
 import { SegmentCustomersService } from '../segment-customers.service';
+import { Journey } from '../../journeys/entities/journey.entity';
+import { Step } from '../../steps/entities/step.entity';
+import { StepsService } from '@/api/steps/steps.service';
+import { StepType } from '@/api/steps/types/step.interface';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@Processor('{segment_update}', {
-  stalledInterval: process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.SEGMENT_UPDATE_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: {
-    age: 0,
-    count: process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
-      ? +process.env.SEGMENT_UPDATE_PROCESSOR_REMOVE_ON_COMPLETE
-      : 0,
-  },
-  metrics: {
-    maxDataPoints: MetricsTime.ONE_WEEK,
-  },
-  concurrency: process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
-    ? +process.env.SEGMENT_UPDATE_PROCESSOR_CONCURRENCY
-    : 1,
-})
-export class SegmentUpdateProcessor extends WorkerHost {
+@Processor('segment_update')
+export class SegmentUpdateProcessor extends ProcessorBase {
   private providerMap = {
     updateDynamic: this.handleUpdateDynamic,
     updateManual: this.handleUpdateManual,
     createDynamic: this.handleCreateDynamic,
+    createSystem: this.handleCreateSystem,
   };
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     @Inject(SegmentsService) private segmentsService: SegmentsService,
+    @Inject(StepsService) private stepsService: StepsService,
     @Inject(forwardRef(() => CustomersService))
     private customersService: CustomersService,
     @InjectConnection() private readonly connection: mongoose.Connection,
-    @InjectQueue('{customer_change}')
-    private readonly customerChangeQueue: Queue,
-    @InjectQueue('{imports}') private readonly importsQueue: Queue,
     @Inject(SegmentCustomersService)
     private segmentCustomersService: SegmentCustomersService,
     @InjectRepository(SegmentCustomers)
@@ -142,6 +130,133 @@ export class SegmentUpdateProcessor extends WorkerHost {
     );
   }
 
+  /*
+   * Creates system segments when a journey is started. For every multisplit branch, it creates a segment that
+   * has the multisplit branch defintiont as the segment defintoin. All of the matching customers are then
+   * added to that segment for future multisplit assessments.
+   */
+  async handleCreateSystem(
+    job: Job<
+      {
+        account: Account;
+        session: string;
+        journey: Journey;
+        segment: Segment;
+      },
+      any,
+      string
+    >
+  ) {
+    while (true) {
+      // TODO: implement using RMQCountFetcher, or use different logic
+      // const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
+
+      if (activeJobs > 0) {
+        this.warn(
+          `Waiting for the customer change queue to clear. Current active jobs: ${activeJobs}`,
+          this.process.name,
+          job.data.session
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
+      } else {
+        break;
+      }
+    }
+    const queryRunner = await this.dataSource.createQueryRunner();
+    const client = await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const collectionPrefix = this.segmentsService.generateRandomString();
+      const customersInSegment =
+        await this.customersService.getSegmentCustomersFromQuery(
+          job.data.segment.inclusionCriteria.query,
+          job.data.account,
+          job.data.session,
+          true,
+          0,
+          collectionPrefix
+        );
+
+      if (!customersInSegment) return; // The segment definition doesnt have any customers in it...
+      const CUSTOMERS_PER_BATCH = 50000;
+      let batch = 0;
+      const mongoCollection = this.connection.db.collection(customersInSegment);
+      const totalDocuments = await mongoCollection.countDocuments();
+
+      while (batch * CUSTOMERS_PER_BATCH <= totalDocuments) {
+        const customers = await this.customersService.find(
+          job.data.account,
+          job.data.segment.inclusionCriteria,
+          job.data.session,
+          null,
+          batch * CUSTOMERS_PER_BATCH,
+          CUSTOMERS_PER_BATCH,
+          customersInSegment
+        );
+        this.log(
+          `Skip ${batch * CUSTOMERS_PER_BATCH}, limit: ${CUSTOMERS_PER_BATCH}`,
+          this.handleCreateDynamic.name,
+          job.data.session
+        );
+        batch++;
+
+        await this.segmentCustomersService.addBulk(
+          job.data.segment.id,
+          customers.map((document) => {
+            return document._id.toString();
+          }),
+          job.data.session,
+          job.data.account,
+          client
+        );
+      }
+      try {
+        await this.segmentsService.deleteCollectionsWithPrefix(
+          collectionPrefix
+        );
+      } catch (e) {
+        this.error(
+          e,
+          this.process.name,
+          job.data.session,
+          job.data.account.email
+        );
+      }
+      let last = false;
+      queryRunner.manager.query('SELECT pg_advisory_lock(12345)');
+      const journey = await queryRunner.manager.findOne(Journey, {
+        where: { id: job.data.journey.id },
+      });
+      if (journey) {
+        journey.completedSystemSegments += 1;
+        await queryRunner.manager.save(journey);
+        if (journey.completedSystemSegments === journey.totalSystemSegments)
+          last = true;
+      }
+      await queryRunner.manager.query('SELECT pg_advisory_unlock(12345)');
+      await queryRunner.commitTransaction();
+      if (last)
+        await Producer.add(QueueType.ENROLLMENT, {
+          account: job.data.account,
+          journey: job.data.journey,
+          session: job.data.session,
+        });
+    } catch (err) {
+      this.error(
+        err,
+        this.handleCreateSystem.name,
+        job.data.session,
+        job.data.account.email
+      );
+      await queryRunner.rollbackTransaction();
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async handleCreateDynamic(
     job: Job<
       {
@@ -155,10 +270,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
     >
   ) {
     let err: any;
-    await this.customerChangeQueue.pause();
+    // await this.customerChangeQueue.pause();
     while (true) {
-      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
-      const activeJobs = jobCounts.active;
+      // const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
 
       if (activeJobs === 0) {
         break; // Exit the loop if the number of waiting jobs is below the threshold
@@ -172,10 +288,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
     }
 
-    await this.importsQueue.pause();
+    // await this.importsQueue.pause();
     while (true) {
-      const jobCounts = await this.importsQueue.getJobCounts('active');
-      const activeJobs = jobCounts.active;
+      // const jobCounts = await this.importsQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
 
       if (activeJobs === 0) {
         break; // Exit the loop if the number of waiting jobs is below the threshold
@@ -265,8 +382,8 @@ export class SegmentUpdateProcessor extends WorkerHost {
       err = e;
     } finally {
       await queryRunner.release();
-      await this.customerChangeQueue.resume();
-      await this.importsQueue.resume();
+      // await this.customerChangeQueue.resume();
+      // await this.importsQueue.resume();
       if (err) throw err;
     }
   }
@@ -285,10 +402,11 @@ export class SegmentUpdateProcessor extends WorkerHost {
     >
   ) {
     let err: any;
-    await this.customerChangeQueue.pause();
+    // await this.customerChangeQueue.pause();
     while (true) {
-      const jobCounts = await this.customerChangeQueue.getJobCounts('active');
-      const activeJobs = jobCounts.active;
+      // const jobCounts = await this.customerChangeQueue.getJobCounts('active');
+      // const activeJobs = jobCounts.active;
+      const activeJobs = 0;
 
       if (activeJobs === 0) {
         break; // Exit the loop if the number of waiting jobs is below the threshold
@@ -311,7 +429,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
         job.data.session
       );
       const forDelete = await this.segmentCustomersRepository.findBy({
-        segment: segment.id,
+        segment: { id: segment.id },
       });
 
       for (const { customerId } of forDelete) {
@@ -360,7 +478,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
       }
 
       const records = await this.segmentCustomersRepository.findBy({
-        segment: segment.id, //{ id: segment.id },
+        segment: { id: segment.id },
       });
 
       for (const { customerId } of records) {
@@ -390,7 +508,7 @@ export class SegmentUpdateProcessor extends WorkerHost {
       err = e;
     } finally {
       await queryRunner.release();
-      await this.customerChangeQueue.resume();
+      // await this.customerChangeQueue.resume();
       if (err) throw err;
     }
   }

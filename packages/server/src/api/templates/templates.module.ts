@@ -3,7 +3,6 @@ import { TemplatesService } from './templates.service';
 import { TemplatesController } from './templates.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Template } from './entities/template.entity';
-import { BullModule } from '@nestjs/bullmq';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Customer, CustomerSchema } from '../customers/schemas/customer.schema';
 import { Audience } from '../audiences/entities/audience.entity';
@@ -39,18 +38,6 @@ import { CacheService } from '@/common/services/cache.service';
     MongooseModule.forFeature([
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
-    BullModule.registerQueue({
-      name: '{message}',
-    }),
-    BullModule.registerQueue({
-      name: '{slack}',
-    }),
-    BullModule.registerQueue({
-      name: '{customers}',
-    }),
-    BullModule.registerQueue({
-      name: '{webhooks}',
-    }),
     forwardRef(() => CustomersModule),
     SlackModule,
     MongooseModule.forFeature([

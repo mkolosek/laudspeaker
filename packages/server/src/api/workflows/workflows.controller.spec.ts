@@ -1,5 +1,4 @@
 import { TypeOrmConfigService } from '../../shared/typeorm/typeorm.service';
-import { BullModule } from '@nestjs/bullmq';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -41,13 +40,6 @@ describe('WorkflowsController', () => {
           Template,
           Workflow,
         ]),
-        BullModule.forRoot({
-          connection: {
-            host: process.env.REDIS_HOST,
-            port: parseInt(process.env.REDIS_PORT),
-            password: process.env.REDIS_PASSWORD,
-          },
-        }),
         MongooseModule.forFeature([
           { name: Customer.name, schema: CustomerSchema },
           { name: EventKeys.name, schema: EventKeysSchema },
@@ -55,18 +47,6 @@ describe('WorkflowsController', () => {
         MongooseModule.forFeature([
           { name: CustomerKeys.name, schema: CustomerKeysSchema },
         ]),
-        BullModule.registerQueue({
-          name: '{message}',
-        }),
-        BullModule.registerQueue({
-          name: '{slack}',
-        }),
-        BullModule.registerQueue({
-          name: '{customers}',
-        }),
-        BullModule.registerQueue({
-          name: '{events}',
-        }),
       ],
       controllers: [WorkflowsController],
       providers: [WorkflowsService, AudiencesService, CustomersService],

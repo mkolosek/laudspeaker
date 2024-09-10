@@ -41,7 +41,6 @@ export class KafkaConsumerService implements OnModuleDestroy {
   }
 
   async onModuleDestroy() {
-    this.logger.error('STOP ME');
     for (const consumer of this.consumers) {
       await consumer.disconnect();
     }

@@ -12,6 +12,7 @@ import SendgridSettings from "./components/SendgridSettings";
 import ResendSettings from "./components/ResendSettings";
 import { useParams } from "react-router-dom";
 import Input from "components/Elements/Inputv2";
+import { setUserSchemaSetupped } from "reducers/onboarding.reducer";
 
 export enum EmailSendingService {
   MAILGUN = "mailgun",
@@ -120,6 +121,7 @@ const EmailSettings = () => {
       toast.error(message);
     } finally {
       setIsSaving(false);
+      setUserSchemaSetupped(true);
     }
   };
 

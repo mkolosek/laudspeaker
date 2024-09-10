@@ -3,9 +3,6 @@ import { Inject, Logger } from '@nestjs/common';
 import { Injectable } from '@nestjs/common';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import {
-  Processor,
-  WorkerHost,
-  InjectQueue,
   OnWorkerEvent,
 } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
@@ -18,26 +15,27 @@ import { Step } from '../../steps/entities/step.entity';
 import { StepsService } from '@/api/steps/steps.service';
 import { CustomersService } from '@/api/customers/customers.service';
 import { JourneysService } from '@/api/journeys/journeys.service';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@Processor('{enrollment}', {
-  stalledInterval: process.env.ENROLLMENT_PROCESSOR_STALLED_INTERVAL
-    ? +process.env.ENROLLMENT_PROCESSOR_STALLED_INTERVAL
-    : 600000,
-  removeOnComplete: { count: 100 },
-})
-export class EnrollmentProcessor extends WorkerHost {
+@Processor(
+  'enrollment', {
+    prefetchCount: 1
+  })
+export class EnrollmentProcessor extends ProcessorBase {
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{start}') private readonly startQueue: Queue,
     @Inject(StepsService)
     private readonly stepsService: StepsService,
     @Inject(CustomersService)
     private readonly customersService: CustomersService,
     @Inject(JourneysService)
-    private journeyService: JourneysService
+    private journeyService: JourneysService,
   ) {
     super();
   }
@@ -119,23 +117,19 @@ export class EnrollmentProcessor extends WorkerHost {
     let err: any;
     let triggerStartTasks: {
       collectionName: string;
-      job: { name: string; data: any };
+      jobData: any;
     };
     let collectionName: string;
     let count: number;
 
-    try
-    {
-      ({ collectionName, count } =
-        await this.customersService.getAudienceSize(
-          job.data.account,
-          job.data.journey.inclusionCriteria,
-          job.data.session,
-          null
-        )
-      );
-    }
-    catch(error) {
+    try {
+      ({ collectionName, count } = await this.customersService.getAudienceSize(
+        job.data.account,
+        job.data.journey.inclusionCriteria,
+        job.data.session,
+        null
+      ));
+    } catch (error) {
       this.error(
         error,
         this.process.name,
@@ -176,10 +170,11 @@ export class EnrollmentProcessor extends WorkerHost {
       });
 
       await queryRunner.commitTransaction();
+
       if (triggerStartTasks) {
-        await this.startQueue.add(
-          triggerStartTasks.job.name,
-          triggerStartTasks.job.data
+        await Producer.add(
+          QueueType.START,
+          triggerStartTasks.jobData
         );
       }
     } catch (e) {

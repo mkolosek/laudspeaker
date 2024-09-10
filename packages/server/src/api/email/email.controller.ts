@@ -9,7 +9,6 @@ import {
   Inject,
   UseInterceptors,
 } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import Mailgun from 'mailgun.js';
 import FormData from 'form-data';
@@ -25,11 +24,12 @@ import * as __ from 'async-dash';
 import { CustomersService } from '../customers/customers.service';
 import { RavenInterceptor } from 'nest-raven';
 import { Resend } from 'resend';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Controller('email')
 export class EmailController {
   constructor(
-    @InjectQueue('{message}') private readonly messageQueue: Queue,
     @InjectRepository(Account)
     private usersRepository: Repository<Account>,
     @InjectRepository(Audience)
@@ -46,7 +46,7 @@ export class EmailController {
 
     const workspace = found.teams?.[0]?.organization?.workspaces?.[0];
 
-    await this.messageQueue.add('email', {
+    await Producer.add(QueueType.MESSAGE, {
       trackingEmail: found.email,
       accountId: found.id,
       key: workspace.mailgunAPIKey,
@@ -56,7 +56,7 @@ export class EmailController {
       to: sendEmailDto.to,
       subject: sendEmailDto.subject,
       text: sendEmailDto.text,
-    });
+    }, 'email');
   }
 
   @UseInterceptors(new RavenInterceptor())
@@ -100,20 +100,19 @@ export class EmailController {
         ).toObject();
 
         return {
-          name: 'email',
-          data: {
-            accountId: found.id,
-            key: workspace.mailgunAPIKey,
-            from: workspace.sendingName,
-            domain: workspace.sendingDomain,
-            email: workspace.sendingEmail,
-            to: email,
-            subject: sendEmailDto.subject,
-            text: sendEmailDto.text,
-          },
+          accountId: found.id,
+          key: workspace.mailgunAPIKey,
+          from: workspace.sendingName,
+          domain: workspace.sendingDomain,
+          email: workspace.sendingEmail,
+          to: email,
+          subject: sendEmailDto.subject,
+          text: sendEmailDto.text,
         };
       })
     );
-    await this.messageQueue.addBulk(jobs);
+    await Producer.addBulk(QueueType.MESSAGE,
+      jobs,
+      'email');
   }
 }

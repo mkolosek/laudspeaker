@@ -158,7 +158,7 @@ describe("multisplit attribute", () => {
 
             cy.contains("Journey has been started").should("exist");
 
-            cy.wait(1000);
+            cy.wait(5000);
 
             // TODO: send array of events to new endpoint /events/batch
             cy.request({
@@ -301,13 +301,13 @@ describe("multisplit attribute", () => {
 
             drag("#webhook", ".empty-node:first", { fireDragOver: false });
             cy.wait(500);
-            cy.get("#template-select").select(1);
+            cy.get("#template-select").select("Webhook1");
             cy.get("#save-node-data").click();
 
             cy.wait(1000);
             drag("#webhook", ".empty-node:last", { fireDragOver: false });
             cy.wait(500);
-            cy.get("#template-select").select(2);
+            cy.get("#template-select").select("Webhook2");
             cy.get("#save-node-data").click();
 
             cy.get("#next-button").click();
@@ -318,7 +318,7 @@ describe("multisplit attribute", () => {
 
             cy.contains("Journey has been started").should("exist");
 
-            cy.wait(1000);
+            cy.wait(5000);
 
             cy.request({
               method: "POST",

@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
-import { BullModule } from '@nestjs/bullmq';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Customer, CustomerSchema } from './schemas/customer.schema';
 import {
@@ -37,7 +36,7 @@ function getProvidersList() {
     AudiencesHelper,
     S3Service,
     JourneyLocationsService,
-    CacheService
+    CacheService,
   ];
 
   if (process.env.LAUDSPEAKER_PROCESS_TYPE == 'QUEUE') {
@@ -74,18 +73,6 @@ function getExportsList() {
     MongooseModule.forFeature([
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
-    BullModule.registerQueue({
-      name: '{customers}',
-    }),
-    BullModule.registerQueue({
-      name: '{customer_change}',
-    }),
-    BullModule.registerQueue({
-      name: '{imports}',
-    }),
-    BullModule.registerQueue({
-      name: '{events_pre}',
-    }),
     AccountsModule,
     SegmentsModule,
     AudiencesModule,

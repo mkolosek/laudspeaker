@@ -11,6 +11,8 @@ import { KafkaConsumerService } from '../kafka/consumer.service';
 import { CustomersService } from './customers.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
 export class CustomersConsumerService implements OnApplicationBootstrap {
@@ -18,8 +20,6 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
     private readonly consumerService: KafkaConsumerService,
-    @InjectQueue('{customer_change}')
-    private readonly customerChangeQueue: Queue
   ) {}
 
   log(message, method, session, user = 'ANONYMOUS') {
@@ -108,27 +108,32 @@ export class CustomersConsumerService implements OnApplicationBootstrap {
         //   ? +process.env.CUSTOMER_CHANGE_QUEUE_THRESHOLD
         //   : 10; // Set the threshold for maximum waiting jobs
 
-        // while (true) {
-        //   const jobCounts = await this.customerChangeQueue.getJobCounts('wait');
-        //   const waitingJobs = jobCounts.wait;
+        while (true) {
+          // TODO: implement using RMQCountFetcher, or use different logic
+          // const jobCounts = await this.segmentUpdateQueue.getJobCounts(
+          //   'active'
+          // );
+          // const waitingJobs = jobCounts.active;
+          const waitingJobs = 0;
 
-        //   if (waitingJobs < threshold) {
-        //     break; // Exit the loop if the number of waiting jobs is below the threshold
-        //   }
+          if (waitingJobs === 0) {
+            break; // Exit the loop if the number of waiting jobs is below the threshold
+          }
 
-        //   this.warn(
-        //     `Waiting for the queue to process. Current waiting jobs: ${waitingJobs}`,
-        //     this.handleCustomerChangeStream.name,
-        //     session
-        //   );
-        //   await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
-        // }
-        await this.customerChangeQueue.add('change', {
+          this.warn(
+            `Waiting for the segment queue to finish processing. Current waiting jobs: ${waitingJobs}`,
+            this.handleCustomerChangeStream.name,
+            session
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000)); // Sleep for 1 second before checking again
+        }
+        await Producer.add(QueueType.CUSTOMER_CHANGE, {
           session,
           changeMessage,
         });
       } catch (err) {
         this.error(err, this.handleCustomerChangeStream.name, session);
+        throw err;
       }
     };
   }

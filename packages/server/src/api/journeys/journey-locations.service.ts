@@ -8,6 +8,7 @@ import {
   IsNull,
   QueryRunner,
   Repository,
+  In,
 } from 'typeorm';
 import { Account } from '../accounts/entities/accounts.entity';
 import { Journey } from './entities/journey.entity';
@@ -235,22 +236,36 @@ export class JourneyLocationsService {
       )
     );
 
-    // Error handling
-    stream.on('error', (error) => {
-      this.error(error, this.createAndLockBulk.name, session, account.email);
-      throw error;
-    });
-    stream.on('finish', () => {
-      this.debug(
-        `Finished creating journey location rows for ${journeyId}`,
-        this.createAndLockBulk.name,
-        session,
-        account.email
-      );
+    const self = this;
+
+    const promise = new Promise<void>(function(resolve, reject) {
+      const successHandler = () => {
+        self.debug(
+          `Finished creating journey location rows for ${journeyId}`,
+          self.createAndLockBulk.name,
+          session,
+          account.email
+        );
+        resolve();
+      };
+
+      const errorHandler = (error) => {
+        console.log("errorHandler");
+        self.error(error, self.createAndLockBulk.name, session, account.email);
+        reject(error);
+      };
+
+      // Error handling
+      readableStream.on('error', errorHandler);
+      stream.on('error', errorHandler);
+
+      stream.on('finish', successHandler);
+
+      // Pipe the readable stream to the COPY command
+      readableStream.pipe(stream);
     });
 
-    // Pipe the readable stream to the COPY command
-    readableStream.pipe(stream);
+    return promise;
   }
 
   /**
@@ -623,7 +638,7 @@ export class JourneyLocationsService {
     if (!queryRunner) {
       queryRunner = await this.dataSource.createQueryRunner();
       await queryRunner.connect();
-      await queryRunner.startTransaction();
+
       try {
         res = await queryRunner.manager.update(
           JourneyLocation,
@@ -637,11 +652,10 @@ export class JourneyLocationsService {
             messageSent: location.messageSent,
           }
         );
-        await queryRunner.commitTransaction();
+
       } catch (e) {
         this.error(e, this.unlock.name, randomUUID());
         err = e;
-        await queryRunner.rollbackTransaction();
       } finally {
         await queryRunner.release();
         if (err) throw err;
@@ -828,5 +842,21 @@ export class JourneyLocationsService {
       count = await this.journeyLocationsRepository.count(queryCriteria);
     }
     return count;
+  }
+
+  async getJourneyListTotalEnrolled(journeyIds: string[]) {
+    const ret = {};
+    const resultSet = await this.journeyLocationsRepository
+      .createQueryBuilder('journeyLocation')
+      .where({journey: In(journeyIds)})
+      .groupBy("journeyLocation.journeyId")
+      .select("journeyLocation.journeyId, COUNT(*) as count")
+      .getRawMany();
+
+    for (const row of resultSet) {
+      ret[row.journeyId] = +row.count;
+    }
+
+    return ret;
   }
 }

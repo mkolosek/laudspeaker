@@ -27,7 +27,6 @@ import {
   CustomerDocument,
 } from '../customers/schemas/customer.schema';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { createClient } from '@clickhouse/client';
 import { isUUID } from 'class-validator';
 import mongoose, { ClientSession, Model } from 'mongoose';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -56,7 +55,6 @@ import {
   ElementCondition,
   EventBranch,
   MessageEvent,
-  CommonMultiBranchMetadata,
   PropertyCondition,
   StartStepMetadata,
   StepType,
@@ -79,16 +77,18 @@ import {
   JourneyEnrollmentType,
 } from './types/additional-journey-settings.interface';
 import { JourneyLocationsService } from './journey-locations.service';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { RedisService } from '@liaoliaots/nestjs-redis';
 import { JourneyChange } from './entities/journey-change.entity';
 import isObjectDeepEqual from '@/utils/isObjectDeepEqual';
 import { JourneyLocation } from './entities/journey-location.entity';
-import { format, eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
+import { eachDayOfInterval, eachWeekOfInterval } from 'date-fns';
 import { CacheService } from '@/common/services/cache.service';
 import { EntityComputedFieldsHelper } from '@/common/helper/entityComputedFields.helper';
 import { EntityWithComputedFields } from '@/common/entities/entityWithComputedFields.entity';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
+import { Segment, SegmentType } from '../segments/entities/segment.entity';
 
 export enum JourneyStatus {
   ACTIVE = 'Active',
@@ -225,17 +225,6 @@ export interface ActivityEvent {
 
 @Injectable()
 export class JourneysService {
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
-  });
-
   constructor(
     private dataSource: DataSource,
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
@@ -251,9 +240,7 @@ export class JourneysService {
     @InjectConnection() private readonly connection: mongoose.Connection,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @InjectQueue('{transition}') private readonly transitionQueue: Queue,
     @Inject(RedisService) private redisService: RedisService,
-    @InjectQueue('{enrollment}') private readonly enrollmentQueue: Queue,
     @Inject(CacheService) private cacheService: CacheService
   ) {}
 
@@ -324,10 +311,7 @@ export class JourneysService {
    * @param session
    * @returns
    */
-
   async getJourneys(account: Account, session: string) {
-    console.log('In getJourneys');
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -756,15 +740,42 @@ export class JourneysService {
     session: string,
     queryRunner: QueryRunner,
     clientSession?: ClientSession
-  ): Promise<{ name: string; data: any }[]> {
-    const jobs: { name: string; data: any }[] = [];
-    const step = await this.stepsService.findByJourneyAndType(
+  ): Promise<any[]> {
+    const jobsData: any[] = [];
+
+    const startStep = await this.stepsService.getStartStep(
       account,
-      journey.id,
-      StepType.START,
+      journey,
       session,
       queryRunner
     );
+
+    // Construct a new journey object with an empty visualLayout, inclusionCriteria
+    // to save space in job queue later
+    const modifiedJourney: Journey = {
+      ...journey,
+      visualLayout: {
+        edges: [],
+        nodes: [],
+      },
+      inclusionCriteria: {},
+    };
+    // Prepare a deep copy of the account to modify without affecting the original account object
+    const modifiedAccount = {
+      ...account,
+      teams: account.teams.map((team) => ({
+        ...team,
+        organization: {
+          ...team.organization,
+          workspaces: team.organization.workspaces.map((workspace) => ({
+            ...workspace,
+            pushConnections: [], //, Clears the pushConnections array
+            //pushPlatforms: null // Clears the pushPlatforms info
+          })),
+        },
+      })),
+    };
+
     for (const customer of customers) {
       if (
         await this.rateLimitEntryByUniqueEnrolledCustomers(
@@ -781,25 +792,23 @@ export class JourneysService {
         );
         continue;
       }
-      const job = {
-        name: 'start',
-        data: {
-          owner: account,
-          journey: journey,
-          step: step,
-          location: locations.find((location: JourneyLocation) => {
-            return (
-              location.customer === (customer._id ?? customer._id.toString()) &&
-              location.journey === journey.id
-            );
-          }),
-          session: session,
-          customer, //customer.id ?? customer._id.toString(),
-        },
+      const jobData = {
+        owner: modifiedAccount,
+        journey: modifiedJourney,
+        step: startStep,
+        location: locations.find((location: JourneyLocation) => {
+          return (
+            location.customer === (customer._id ?? customer._id.toString()) &&
+            location.journey === journey.id
+          );
+        }),
+        session: session,
+        customer, //customer.id ?? customer._id.toString(),
+        stepDepth: 1,
       };
-      jobs.push(job);
+      jobsData.push(jobData);
     }
-    return jobs;
+    return jobsData;
   }
 
   /**
@@ -1019,10 +1028,6 @@ export class JourneysService {
         .take(take < 100 ? take : 100)
         .skip(skip)
         .leftJoin('journey.latestChanger', 'account')
-        .loadRelationCountAndMap(
-          'journey.totalEnrolled',
-          'journey.journeyLocations'
-        )
         .addSelect('account.email', 'latestChangerEmail');
 
       if (orderBy)
@@ -1032,12 +1037,19 @@ export class JourneysService {
         );
 
       const journeys = await query.getRawAndEntities();
-      const computedFieldsList = ['latestChangerEmail', 'totalEnrolled'];
+      const journeyIds = journeys.entities.map( (journey) => journey.id );
+
+      const totalCounts = await this.journeyLocationsService.getJourneyListTotalEnrolled(journeyIds);
+
+      const computedFieldsList = ['latestChangerEmail'];
 
       const result = EntityComputedFieldsHelper.processCollection<Journey>(
         journeys,
         computedFieldsList
       );
+
+      for(const i in result)
+        result[i].computed.totalEnrolled = totalCounts[result[i].entity.id];
 
       return { data: result, totalPages };
     } catch (err) {
@@ -1740,7 +1752,7 @@ export class JourneysService {
         isActive: true,
       });
 
-      if(organization.plan.activeJourneyLimit != -1){
+      if (process.env.NODE_ENV != "development" && organization.plan.activeJourneyLimit != -1) {
         if (activeJourneysCount + 1 > organization.plan.activeJourneyLimit) {
           throw new HttpException(
             'Active journeys limit has been exceeded',
@@ -1748,7 +1760,7 @@ export class JourneysService {
           );
         }
       }
-      
+
       const accountWithConnections = await queryRunner.manager.findOne(
         Account,
         {
@@ -1815,6 +1827,56 @@ export class JourneysService {
       if (!alg.isAcyclic(graph))
         throw new Error('Flow has infinite loops, cannot start.');
 
+      let jobs = [];
+      const multiSplitSteps: Step[] =
+        await this.stepsService.transactionalfindAllByTypeInJourney(
+          account,
+          StepType.MULTISPLIT,
+          journey.id,
+          queryRunner,
+          session
+        );
+      if (multiSplitSteps.length) {
+        for (
+          let stepIndex = 0;
+          stepIndex < multiSplitSteps.length;
+          stepIndex++
+        ) {
+          for (
+            let branchIndex = 0;
+            branchIndex < multiSplitSteps[stepIndex].metadata.branches.length;
+            branchIndex++
+          ) {
+            const segment = await queryRunner.manager.save(Segment, {
+              type: SegmentType.SYSTEM,
+              name: '__SYSTEM__',
+              inclusionCriteria:
+                multiSplitSteps[stepIndex].metadata.branches[branchIndex]
+                  .conditions,
+              workspace: {
+                id: account.teams?.[0]?.organization.workspaces?.[0].id,
+              },
+              isUpdating: false,
+            });
+            multiSplitSteps[stepIndex].metadata.branches[
+              branchIndex
+            ].systemSegment = segment.id;
+
+            await queryRunner.manager.save(Step, multiSplitSteps[stepIndex]);
+
+            jobs.push({
+              name: 'createSystem',
+              data: {
+                account,
+                journey,
+                session,
+                segment,
+              },
+            });
+          }
+        }
+      }
+
       if (
         journey.journeyEntrySettings.entryTiming.type ===
         EntryTiming.WhenPublished
@@ -1826,6 +1888,7 @@ export class JourneysService {
           isActive: true,
           isEnrolling: true,
           startedAt: new Date(Date.now()),
+          totalSystemSegments: jobs.length,
         });
       } else {
         journey = await queryRunner.manager.save(Journey, {
@@ -1833,16 +1896,26 @@ export class JourneysService {
           isEnrolling: true,
           isActive: true,
           startedAt: new Date(Date.now()),
+          totalSystemSegments: jobs.length,
         });
       }
 
       await this.trackChange(account, journeyID, queryRunner);
       await queryRunner.commitTransaction();
-      await this.enrollmentQueue.add('enroll', {
-        account,
-        journey,
-        session,
-      });
+      if (jobs.length)
+        await Producer.addBulk(QueueType.SEGMENT_UPDATE,
+          jobs.map((job) => {
+            return {
+              ...job.data,
+              journey,
+            };
+          }), 'createSystem');
+      else
+        await Producer.add(QueueType.ENROLLMENT, {
+          account,
+          journey,
+          session,
+        });
     } catch (e) {
       err = e;
       this.error(e, this.start.name, session, account.email);

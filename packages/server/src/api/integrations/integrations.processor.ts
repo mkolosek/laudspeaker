@@ -1,4 +1,3 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import handleDatabricks from './databricks.worker';
 import {
@@ -19,6 +18,8 @@ import { Pool } from 'pg';
 import Cursor from 'pg-cursor';
 import handleMySql from './mysql.worker';
 import { Injectable } from '@nestjs/common';
+import { Processor } from '@/common/services/queue/decorators/processor';
+import { ProcessorBase } from '@/common/services/queue/classes/processor-base';
 
 const hourMs = 60 * 60 * 1000;
 const dayMs = 24 * hourMs;
@@ -37,8 +38,8 @@ const frequencyUnitToMsMap: Record<FrequencyUnit, number> = {
 const BATCH_SiZE = 10_000_000;
 
 @Injectable()
-@Processor('{integrations}', { removeOnComplete: { age: 0, count: 0 } })
-export class IntegrationsProcessor extends WorkerHost {
+@Processor('integrations')
+export class IntegrationsProcessor extends ProcessorBase {
   constructor(
     @InjectModel(Customer.name)
     private customerModel: Model<CustomerDocument>,

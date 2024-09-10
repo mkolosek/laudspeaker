@@ -30,10 +30,8 @@ import {
   CustomerKeys,
   CustomerKeysDocument,
 } from './schemas/customer-keys.schema';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import { createClient, Row } from '@clickhouse/client';
 import { attributeConditions } from '../../fixtures/attributeConditions';
 import { getType } from 'tst-reflect';
 import { isDateString, isEmail } from 'class-validator';
@@ -92,6 +90,13 @@ import { CacheService } from '@/common/services/cache.service';
 import { CustomerSearchOptions } from './interfaces/CustomerSearchOptions.interface';
 import { CustomerSearchOptionResult } from './interfaces/CustomerSearchOptionResult.interface';
 import { FindType } from './enums/FindType.enum';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
+import {
+  ClickHouseTable,
+  ClickHouseClient,
+  ClickHouseRow
+} from '@/common/services/clickhouse';
 
 export type Correlation = {
   cust: CustomerDocument;
@@ -103,6 +108,23 @@ const eventsMap = {
   clicked: 'clicked',
   delivered: 'delivered',
   opened: 'opened',
+};
+
+// Keeping these together so they stay in sync as we
+// add more channels.
+
+const rules = {
+  email: ['^email', '^email_address'],
+  phone: ['^phone', '^phone_number'],
+  ios: ['^iosDeviceToken'],
+  android: ['^androidDeviceToken'],
+};
+
+const rulesRaw = {
+  email: ['email', 'email_address'],
+  phone: ['phone', 'phone_number'],
+  ios: ['iosDeviceToken'],
+  android: ['androidDeviceToken'],
 };
 
 export interface JourneyDataForTimeLine {
@@ -185,6 +207,13 @@ export const systemAttributes: SystemAttribute[] = [
     isArray: false,
     isSystem: true,
   },
+  {
+    id: uuid(),
+    key: 'laudspeakerSystemSource',
+    type: StatementValueType.STRING,
+    isArray: false,
+    isSystem: true,
+  },
 ];
 
 export interface QueryOptions {
@@ -192,24 +221,29 @@ export interface QueryOptions {
   customerKeys?: { key: string; type: AttributeType }[];
 }
 
-@Injectable()
-export class CustomersService {
-  private clickhouseClient = createClient({
-    host: process.env.CLICKHOUSE_HOST
-      ? process.env.CLICKHOUSE_HOST.includes('http')
-        ? process.env.CLICKHOUSE_HOST
-        : `http://${process.env.CLICKHOUSE_HOST}`
-      : 'http://localhost:8123',
-    username: process.env.CLICKHOUSE_USER ?? 'default',
-    password: process.env.CLICKHOUSE_PASSWORD ?? '',
-    database: process.env.CLICKHOUSE_DB ?? 'default',
+const createIndexIfNotExists = async (collection, indexSpec, options = {}) => {
+  const indexes = await collection.indexes();
+  const indexExists = indexes.some((index) => {
+    const keysMatch = Object.keys(indexSpec).every(
+      (key) =>
+        index.key.hasOwnProperty(key) && index.key[key] === indexSpec[key]
+    );
+    return keysMatch;
   });
 
+  if (!indexExists) {
+    await collection.createIndex(indexSpec, options);
+    console.log(`Index ${JSON.stringify(indexSpec)} created successfully.`);
+  } else {
+    console.log(`Index ${JSON.stringify(indexSpec)} already exists.`);
+  }
+};
+
+@Injectable()
+export class CustomersService {
   constructor(
     @Inject(WINSTON_MODULE_NEST_PROVIDER)
     private readonly logger: Logger,
-    @InjectQueue('{customers}') private readonly customersQueue: Queue,
-    @InjectQueue('{imports}') private readonly importsQueue: Queue,
     @InjectModel(Customer.name) public CustomerModel: Model<CustomerDocument>,
     @InjectModel(CustomerKeys.name)
     public CustomerKeysModel: Model<CustomerKeysDocument>,
@@ -232,31 +266,74 @@ export class CustomersService {
     private readonly s3Service: S3Service,
     @Inject(JourneyLocationsService)
     private readonly journeyLocationsService: JourneyLocationsService,
-    @Inject(CacheService) private cacheService: CacheService
+    @Inject(CacheService) private cacheService: CacheService,
+    @Inject(ClickHouseClient)
+    private clickhouseClient: ClickHouseClient,
   ) {
     const session = randomUUID();
+
     (async () => {
       try {
         const collection = this.connection.db.collection('customers');
-        await collection.createIndex('workspaceId');
-        await collection.createIndex({ other_ids: 1, workspaceId: 1 });
-        await collection.createIndex(
-          { __posthog__id: 1, workspaceId: 1 },
-          {
-            unique: true,
-            partialFilterExpression: {
-              __posthog__id: { $exists: true, $type: 'array', $gt: [] },
-            },
+        async function getExistingIndexes(collection) {
+          const indexes = await collection.listIndexes().toArray();
+          return indexes.map((index) => index.key);
+        }
+
+        async function removeObsoleteIndexes(collection, requiredIndexes) {
+          const existingIndexes = await getExistingIndexes(collection);
+          for (const existingIndex of existingIndexes) {
+            const indexKey = JSON.stringify(existingIndex);
+            if (
+              !requiredIndexes.includes(indexKey) &&
+              indexKey !== JSON.stringify({ _id: 1 })
+            ) {
+              await collection.dropIndex(existingIndex);
+            }
           }
-        );
+        }
+
+        const requiredIndexes = [];
+
+        requiredIndexes.push(JSON.stringify({ workspaceId: 1 }));
+        await createIndexIfNotExists(collection, { workspaceId: 1 });
+
+        requiredIndexes.push(JSON.stringify({ other_ids: 1, workspaceId: 1 }));
+        await createIndexIfNotExists(collection, {
+          other_ids: 1,
+          workspaceId: 1,
+        });
+
+        requiredIndexes.push(JSON.stringify({ other_ids: 1 }));
+        await createIndexIfNotExists(collection, { other_ids: 1 });
+
+        requiredIndexes.push(JSON.stringify({ _id: 1, workspaceId: 1 }));
+        await createIndexIfNotExists(collection, { _id: 1, workspaceId: 1 });
+
+        for (const [channel, channelRules] of Object.entries(rulesRaw)) {
+          for (const rule of channelRules) {
+            const indexSpec = { [rule]: 1, workspaceId: 1 };
+            requiredIndexes.push(JSON.stringify(indexSpec));
+            await createIndexIfNotExists(collection, indexSpec, {
+              unique: true,
+              partialFilterExpression: { [rule]: { $exists: true } },
+            });
+          }
+        }
+
         const keyCollection = this.connection.db.collection('customerkeys');
         const primaryKeyDocs = keyCollection.find({ isPrimary: true });
         for await (const primaryKey of primaryKeyDocs) {
-          await collection.createIndex({ [primaryKey.key]: 1, workspaceId: 1 });
+          const indexSpec = { [primaryKey.key]: 1, workspaceId: 1 };
+          requiredIndexes.push(JSON.stringify(indexSpec));
+          await createIndexIfNotExists(collection, indexSpec, {
+            unique: true,
+            partialFilterExpression: { [primaryKey.key]: { $exists: true } },
+          });
         }
-      } catch (e) {
-        this.error(e, CustomersService.name, session);
-      }
+
+        await removeObsoleteIndexes(collection, requiredIndexes);
+      } catch (err) {}
     })();
   }
 
@@ -320,8 +397,11 @@ export class CustomersService {
   }
 
   async checkCustomerLimit(organization: Organization, customersToAdd = 1) {
-
-    this.debug(`in checkCustomerLimte`, this.checkCustomerLimit.name, "session");
+    this.debug(
+      `in checkCustomerLimte`,
+      this.checkCustomerLimit.name,
+      'session'
+    );
 
     const customersInOrganization = await this.CustomerModel.count({
       workspaceId: {
@@ -329,7 +409,10 @@ export class CustomersService {
       },
     });
 
-    if(organization.plan.customerLimit != -1){
+    if (
+      process.env.NODE_ENV !== 'development' &&
+      organization.plan.customerLimit != -1
+    ) {
       if (
         customersInOrganization + customersToAdd >
         organization.plan.customerLimit
@@ -340,7 +423,7 @@ export class CustomersService {
         );
       }
     }
-    
+
     return customersInOrganization;
   }
 
@@ -555,19 +638,19 @@ export class CustomersService {
     const offset = (page - 1) * pageSize;
 
     const countResponse = await this.clickhouseClient.query({
-      query: `SELECT count() as totalCount FROM message_status WHERE customerId = {customerId:String}`,
+      query: `SELECT count() as totalCount FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE customerId = {customerId:String}`,
       query_params: { customerId },
     });
 
     const totalCount =
-      (await countResponse.json<{ data: { totalCount: number }[] }>()).data[0]
+      (await countResponse.json<{ totalCount: number }>()).data[0]
         ?.totalCount || 0;
     const totalPage = Math.ceil(totalCount / pageSize);
 
     const response = await this.clickhouseClient.query({
       query: `
         SELECT stepId, event, createdAt, eventProvider, templateId 
-        FROM message_status 
+        FROM ${ClickHouseTable.MESSAGE_STATUS} 
         WHERE customerId = {customerId:String} 
         ORDER BY createdAt DESC
         LIMIT ${pageSize} OFFSET ${offset}
@@ -577,7 +660,9 @@ export class CustomersService {
 
     const data = (
       await response.json<{
-        data: { audienceId: string; event: string; createdAt: string }[];
+        audienceId: string;
+        event: string;
+        createdAt: string;
       }>()
     )?.data;
 
@@ -747,21 +832,21 @@ export class CustomersService {
 
     if (eventsMap[event] && audienceId) {
       const customersCountResponse = await this.clickhouseClient.query({
-        query: `SELECT COUNT(DISTINCT(customerId)) FROM message_status WHERE audienceId = {audienceId:UUID} AND event = {event:String}`,
+        query: `SELECT COUNT(DISTINCT(customerId)) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE audienceId = {audienceId:UUID} AND event = {event:String}`,
         query_params: { audienceId, event: eventsMap[event] },
       });
       const customersCountResponseData = (
-        await customersCountResponse.json<{ data: { 'count()': string }[] }>()
+        await customersCountResponse.json<{ 'count()': string }>()
       )?.data;
       const customersCount = +customersCountResponseData?.[0]?.['count()'] || 1;
 
       const totalPages = Math.ceil(customersCount / take);
 
       const response = await this.clickhouseClient.query({
-        query: `SELECT DISTINCT(customerId) FROM message_status WHERE audienceId = {audienceId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
+        query: `SELECT DISTINCT(customerId) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE audienceId = {audienceId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
         query_params: { audienceId, event: eventsMap[event], take, skip },
       });
-      const data = (await response.json<{ data: { customerId: string }[] }>())
+      const data = (await response.json<{ customerId: string }>())
         ?.data;
       const customerIds = data?.map((item) => item.customerId) || [];
 
@@ -792,11 +877,11 @@ export class CustomersService {
     }
     const authString = 'Bearer ' + phAuth;
     try {
-      await this.customersQueue.add('sync', {
+      await Producer.add(QueueType.CUSTOMERS, {
         url: posthogUrl,
         auth: authString,
         account: account,
-      });
+      }, 'sync');
     } catch (e) {
       this.error(e, this.ingestPosthogPersons.name, session);
     }
@@ -1204,100 +1289,38 @@ export class CustomersService {
     return Promise.resolve(customer);
   }
 
-  // async findOrCreateByCorrelationKVPair(
-  //   workspace: Workspaces,
-  //   dto: EventDto,
-  //   transactionSession: ClientSession
-  // ): Promise<Correlation> {
-  //   let customer: CustomerDocument; // Found customer
-  //   const queryParam = {
-  //     workspaceId: workspace.id,
-  //     $or: [
-  //       { [dto.correlationKey]: dto.correlationValue },
-  //       { other_ids: dto.correlationValue },
-  //     ],
-  //   };
-  //   try {
-  //     customer = await this.CustomerModel.findOne(queryParam)
-  //       .session(transactionSession)
-  //       .exec();
-  //   } catch (err) {
-  //     return Promise.reject(err);
-  //   }
-  //   if (!customer) {
-  //     // When no customer is found with the given correlation, create a new one
-  //     // If the correlationKey is '_id', use it to set the _id of the new customer
-  //     const newCustomerData: any = {
-  //       workspaceId: workspace.id,
-  //       createdAt: new Date(),
-  //     };
-  //     if (dto.correlationKey === '_id') {
-  //       newCustomerData._id = dto.correlationValue;
-  //     } else {
-  //       // If correlationKey is not '_id',
-  //       newCustomerData._id = randomUUID();
-  //     }
-  //     const createdCustomer = new this.CustomerModel(newCustomerData);
-  //     return {
-  //       cust: await createdCustomer.save({ session: transactionSession }),
-  //       found: false,
-  //     };
-  //   } else {
-  //     return { cust: customer, found: true };
-  //   }
-  //   /*
-  //   if (!customer) {
-
-  //     if (!queryParam._id) {
-  //       queryParam._id = randomUUID();
-  //     }
-
-  //     const createdCustomer = new this.CustomerModel(queryParam);
-  //     return {
-  //       cust: await createdCustomer.save({ session: transactionSession }),
-  //       found: false,
-  //     };
-  //   } else return { cust: customer, found: true };
-  //   */
-  // }
-
   // get keys that weren't marked as primary but may be used
   // as channels for sending messages (e.g. email, email_address,
   // phone, phone_number, etc..)
-  async getMessageChannelsCustomerKeys(
-    workspaceId: string
-  ): Promise<string[]> {
+  async getMessageChannelsCustomerKeys(workspaceId: string): Promise<string[]> {
     let keys = [];
 
     const customerKeys = await this.CustomerKeysModel.find({ workspaceId });
 
-    const rules = {
-      email: ["^email",  "^email_address"],
-      phone: ["^phone",  "^phone_number"],
-      ios: ["^iosDeviceToken"],
-      android: ["^androidDeviceToken"]
-    };
-
-    for(const customerKey of customerKeys) {
-      if(customerKey.isPrimary || ( customerKey.type !== AttributeType.STRING && customerKey.type !== AttributeType.EMAIL ) )
+    for (const customerKey of customerKeys) {
+      if (
+        customerKey.isPrimary ||
+        (customerKey.type !== AttributeType.STRING &&
+          customerKey.type !== AttributeType.EMAIL)
+      )
         continue;
 
       let customerKeyName = customerKey.key;
 
-      for(const [channel, channelRules] of Object.entries(rules)) {
+      for (const [channel, channelRules] of Object.entries(rules)) {
         let matchFound = false;
 
-        for(const regexRule of channelRules) {
-          let regex = new RegExp(regexRule, "i");
+        for (const regexRule of channelRules) {
+          let regex = new RegExp(regexRule, 'i');
           let result = regex.exec(customerKeyName);
 
-          if(result) {
+          if (result) {
             matchFound = true;
             break;
           }
         }
 
-        if(matchFound) {
+        if (matchFound) {
           keys.push(customerKeyName);
 
           this.logger.log(
@@ -1321,11 +1344,10 @@ export class CustomersService {
     let result: CustomerSearchOptions = {
       primaryKey: {},
       messageChannels: {},
-      correlationValue: ""
+      correlationValue: '',
     };
 
-    if(!object)
-    {
+    if (!object) {
       _.merge(result, searchOptionsInitial);
       return result;
     }
@@ -1333,8 +1355,7 @@ export class CustomersService {
     result.primaryKey.name = object.primaryKeyName;
     result.primaryKey.value = object.primaryKeyValue;
 
-    if(result.primaryKey.value && !result.primaryKey.name)
-    {
+    if (result.primaryKey.value && !result.primaryKey.name) {
       let primaryKey = await this.getPrimaryKeyStrict(workspaceId, session);
       result.primaryKey.name = primaryKey?.key;
     }
@@ -1342,12 +1363,17 @@ export class CustomersService {
     result.correlationValue = object.correlationValue;
 
     // try to find customers via message channel fields
-    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(workspaceId);
+    const messageChannelsKeys = await this.getMessageChannelsCustomerKeys(
+      workspaceId
+    );
 
-    for(const messageChannelsKey of messageChannelsKeys) {
-      let objectFieldValue = this.getFieldValueFromObject(object, messageChannelsKey);
+    for (const messageChannelsKey of messageChannelsKeys) {
+      let objectFieldValue = this.getFieldValueFromObject(
+        object,
+        messageChannelsKey
+      );
 
-      if(objectFieldValue) {
+      if (objectFieldValue) {
         result.messageChannels[messageChannelsKey] = objectFieldValue;
       }
     }
@@ -1358,15 +1384,17 @@ export class CustomersService {
   }
 
   getFieldValueFromObject(object: any, fieldName: string): any {
-    if(!object)
-      return null;
+    if (!object) return null;
 
-    let objectToUse:any = object;
+    let objectToUse: any = object;
 
-    if(object.$fcm && (fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken'))
+    if (
+      object.$fcm &&
+      (fieldName == 'iosDeviceToken' || fieldName == 'androidDeviceToken')
+    )
       objectToUse = object.$fcm;
 
-    return objectToUse[fieldName]
+    return objectToUse[fieldName];
   }
 
   /**
@@ -1385,11 +1413,27 @@ export class CustomersService {
   ): Promise<CustomerSearchOptionResult[]> {
     let result: CustomerSearchOptionResult[] = [];
 
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object:  ${JSON.stringify(object)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
+
     const searchOptions = await this.extractSearchOptionsFromObject(
       workspaceId,
       searchOptionsInitial,
       session,
-      object);
+      object
+    );
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
 
     const findConditions: Array<Object> = [];
 
@@ -1401,7 +1445,7 @@ export class CustomersService {
       });
     }
 
-    for(const attributeName in searchOptions.messageChannels) {
+    for (const attributeName in searchOptions.messageChannels) {
       findConditions.push({
         [attributeName]: searchOptions.messageChannels[attributeName],
         workspaceId,
@@ -1425,28 +1469,37 @@ export class CustomersService {
       $or: findConditions,
     });
 
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       findConditions: ${JSON.stringify(findConditions)},
+       customers: ${JSON.stringify(customers)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
+
     for (const findType of Object.values(FindType)) {
       for (let i = 0; i < customers.length; i++) {
         if (
           findType == FindType.PRIMARY_KEY &&
           searchOptions.primaryKey.name &&
-          customers[i][searchOptions.primaryKey.name] == searchOptions.primaryKey.value
+          customers[i][searchOptions.primaryKey.name] ==
+            searchOptions.primaryKey.value
         ) {
           result.push({
             customer: customers[i],
-            findType
+            findType,
           });
-        } else if (
-          findType == FindType.MESSAGE_CHANNEL
-        ) {
+        } else if (findType == FindType.MESSAGE_CHANNEL) {
           // find which field from the customer matches the object's
-          for(const attributeName in searchOptions.messageChannels) {
+          for (const attributeName in searchOptions.messageChannels) {
             let objectFieldValue = searchOptions.messageChannels[attributeName];
 
-            if(objectFieldValue == customers[i][attributeName]) {
+            if (objectFieldValue == customers[i][attributeName]) {
               result.push({
                 customer: customers[i],
-                findType
+                findType,
               });
 
               break;
@@ -1458,20 +1511,33 @@ export class CustomersService {
         ) {
           result.push({
             customer: customers[i],
-            findType
+            findType,
           });
         } else if (
           findType == FindType.OTHER_IDS &&
           searchOptions.correlationValue &&
-          customers[i].other_ids.includes(searchOptions.correlationValue.toString())
+          customers[i].other_ids.includes(
+            searchOptions.correlationValue.toString()
+          )
         ) {
           result.push({
             customer: customers[i],
-            findType
+            findType,
           });
         }
       }
     }
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       findConditions: ${JSON.stringify(findConditions)},
+       customers: ${JSON.stringify(customers)},
+       result: ${JSON.stringify(result)}`,
+      this.findCustomersBySearchOptions.name,
+      session
+    );
 
     // our conditions were not inclusive, something's wrong
     if (customers.length > 0 && result.length == 0) {
@@ -1503,16 +1569,17 @@ export class CustomersService {
     let findType: FindType;
     let result: CustomerSearchOptionResult = {
       customer: null,
-      findType: null
+      findType: null,
     };
 
     const searchResults = await this.findCustomersBySearchOptions(
       workspaceId,
       searchOptionsInitial,
       session,
-      object);
+      object
+    );
 
-    if(searchResults.length > 0) {
+    if (searchResults.length > 0) {
       result = searchResults[0];
     }
 
@@ -1524,6 +1591,7 @@ export class CustomersService {
    * @param workspaceId
    * @param searchOptionsInitial
    * @param session
+   * @param systemSource (i.e. event, upsert)
    * @param customerUpsertData
    * @param object (e.g. event)
    * @returns customer
@@ -1533,45 +1601,69 @@ export class CustomersService {
     searchOptionsInitial: CustomerSearchOptions,
     session: string,
     customerUpsertData: Record<string, any>,
+    systemSource: string,
     object?: Record<string, any>
   ): Promise<CustomerSearchOptionResult> {
-
     const searchOptions = await this.extractSearchOptionsFromObject(
       workspaceId,
       searchOptionsInitial,
       session,
-      object);
+      object
+    );
 
     let result = await this.findCustomerBySearchOptions(
       workspaceId,
       searchOptions,
       session,
       object
-      );
+    );
+
+    this.debug(
+      `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+       customerUpsertData: ${JSON.stringify(customerUpsertData)},
+       systemSource: ${JSON.stringify(systemSource)},
+       object: ${JSON.stringify(object)},
+       searchOptions: ${JSON.stringify(searchOptions)},
+       result: ${JSON.stringify(result)}`,
+      this.findOrCreateCustomerBySearchOptions.name,
+      session
+    );
 
     // If customer still not found, create a new one
     if (!result.customer) {
       const newId = searchOptions.correlationValue || randomUUID();
 
+      // add source information
+      // TODO: need to namespace the user and system attributes
+      // so there won't any collisions
       const upsertData = {
         _id: newId,
         workspaceId,
         createdAt: new Date(),
+        laudspeakerSystemSource: systemSource,
       };
 
       if (searchOptions.primaryKey.value && searchOptions.primaryKey.name) {
-        upsertData[searchOptions.primaryKey.name] = searchOptions.primaryKey.value;
+        upsertData[searchOptions.primaryKey.name] =
+          searchOptions.primaryKey.value;
         upsertData['isAnonymous'] = false;
       }
 
       _.merge(upsertData, customerUpsertData);
 
+      this.debug(
+        `searchOptionsInitial: ${JSON.stringify(searchOptionsInitial)},
+         customerUpsertData: ${JSON.stringify(customerUpsertData)},
+         systemSource: ${JSON.stringify(systemSource)},
+         object: ${JSON.stringify(object)},
+         searchOptions: ${JSON.stringify(searchOptions)},
+         upsertData: ${JSON.stringify(upsertData)}`,
+        this.findOrCreateCustomerBySearchOptions.name,
+        session
+      );
+
       try {
-        result.customer = await this.CustomerModel.findOneAndUpdate(
-          { _id: newId, workspaceId },
-          { $setOnInsert: { ...upsertData }},
-          { upsert: true, new: true }
-        );
+        result.customer = await this.CustomerModel.create(upsertData);
         result.findType = FindType.UPSERT; // Set findType to UPSERT to indicate an upsert operation
       } catch (error: any) {
         // Check if the error is a duplicate key error
@@ -1582,7 +1674,13 @@ export class CustomersService {
           });
           result.findType = FindType.DUPLICATE_KEY_ERROR; // Optionally, set a different findType to indicate handling of a duplicate key error
         } else {
-          this.error(error, this.findOrCreateCustomerBySearchOptions.name, session);
+          this.error(
+            error,
+            this.findOrCreateCustomerBySearchOptions.name,
+            session
+          );
+
+          throw error;
         }
       }
     }
@@ -1596,7 +1694,10 @@ export class CustomersService {
       const deviceTokenSetAtField = iosDeviceToken
         ? 'iosDeviceTokenSetAt'
         : 'androidDeviceTokenSetAt';
-      if (result.customer[deviceTokenField] !== deviceTokenValue)
+      if (
+        result.customer &&
+        result.customer[deviceTokenField] !== deviceTokenValue
+      )
         result.customer = await this.CustomerModel.findOneAndUpdate(
           { _id: result.customer._id, workspaceId },
           {
@@ -1627,7 +1728,10 @@ export class CustomersService {
     session: string
   ): Promise<{ id: string }> {
     try {
-      let primaryKey = await this.getPrimaryKeyStrict(auth.workspace.id, session);
+      let primaryKey = await this.getPrimaryKeyStrict(
+        auth.workspace.id,
+        session
+      );
 
       if (!primaryKey)
         throw new HttpException(
@@ -1635,17 +1739,22 @@ export class CustomersService {
           HttpStatus.BAD_REQUEST
         );
 
-      let { customer, findType } = await this.findOrCreateCustomerBySearchOptions(
-        auth.workspace.id,
-        {
-          primaryKey: { name: primaryKey.key, value: upsertCustomerDto.primary_key },
-        },
-        session,
-        { ...upsertCustomerDto.properties },
-        // send the upsert proprties once for upsert data and another for 
-        // trying to find customers via message channels
-        { ...upsertCustomerDto.properties }
-      );
+      let { customer, findType } =
+        await this.findOrCreateCustomerBySearchOptions(
+          auth.workspace.id,
+          {
+            primaryKey: {
+              name: primaryKey.key,
+              value: upsertCustomerDto.primary_key,
+            },
+          },
+          session,
+          { ...upsertCustomerDto.properties },
+          'upsert',
+          // send the upsert proprties once for upsert data and another for
+          // trying to find customers via message channels
+          { ...upsertCustomerDto.properties }
+        );
 
       return Promise.resolve({ id: customer._id });
     } catch (err) {
@@ -2176,21 +2285,21 @@ export class CustomersService {
 
     if (eventsMap[event] && stepId) {
       const customersCountResponse = await this.clickhouseClient.query({
-        query: `SELECT COUNT(DISTINCT(customerId)) FROM message_status WHERE stepId = {stepId:UUID} AND event = {event:String}`,
+        query: `SELECT COUNT(DISTINCT(customerId)) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE stepId = {stepId:UUID} AND event = {event:String}`,
         query_params: { stepId, event: eventsMap[event] },
       });
       const customersCountResponseData = (
-        await customersCountResponse.json<{ data: { 'count()': string }[] }>()
+        await customersCountResponse.json<{ 'count()': string }>()
       )?.data;
       const customersCount = +customersCountResponseData?.[0]?.['count()'] || 1;
 
       const totalPages = Math.ceil(customersCount / take);
 
       const response = await this.clickhouseClient.query({
-        query: `SELECT DISTINCT(customerId) FROM message_status WHERE stepId = {stepId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
+        query: `SELECT DISTINCT(customerId) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE stepId = {stepId:UUID} AND event = {event:String} ORDER BY createdAt LIMIT {take:Int32} OFFSET {skip:Int32}`,
         query_params: { stepId, event: eventsMap[event], take, skip },
       });
-      const data = (await response.json<{ data: { customerId: string }[] }>())
+      const data = (await response.json<{ customerId: string }>())
         ?.data;
       const customerIds = data?.map((item) => item.customerId) || [];
 
@@ -2207,27 +2316,7 @@ export class CustomersService {
   }
 
   public async countCustomersInStep(account: Account, stepId: string) {
-    const step = await this.stepsService.findOne(account, stepId, '');
-    if (!step) throw new NotFoundException('Step not found');
-
-    let result = step.customers.length;
-
-    for (const customerJSON of step.customers) {
-      const customerId = JSON.parse(customerJSON)?.customerID;
-
-      if (!customerId) {
-        result--;
-        continue;
-      }
-
-      const customer = await this.findById(account, customerId);
-      if (!customer) {
-        result--;
-        continue;
-      }
-    }
-
-    return result;
+    return 0;
   }
 
   public async bulkCountCustomersInSteps(account: Account, stepIds: string[]) {
@@ -2250,29 +2339,9 @@ export class CustomersService {
     take = 100,
     skip = 0
   ) {
-    if (take > 100) take = 100;
-
-    const step = await this.stepsService.findOne(account, stepId, '');
-    if (!step) throw new NotFoundException('Step not found');
-
-    const totalPages = Math.ceil(step.customers.length / take || 1);
-
-    const customerIds = step.customers
-      .slice(skip, skip + take)
-      .map((customer) => JSON.parse(customer).customerID);
-
-    const customers = await Promise.all(
-      customerIds.map(async (customerId) => {
-        const customer = await this.findById(account, customerId);
-        if (!customer) return undefined;
-
-        return { id: customer._id, email: customer.email };
-      })
-    );
-
     return {
-      data: customers.filter((customer) => customer && customer.id),
-      totalPages,
+      data: [],
+      totalPages: 0,
     };
   }
 
@@ -2488,6 +2557,187 @@ export class CustomersService {
   }
 
   /*
+   * To support document db we have to move some of the processing to the application side
+   *
+   * Specifically we can't use unionWith and merge
+   *
+   */
+
+  async documentDBanySegmentCase(
+    account: Account,
+    session: string,
+    sets: any[],
+    collectionName: string,
+    thisCollectionName: string,
+    finalCollectionPrepend: string,
+    andOr?: string
+  ) {
+    this.debug(
+      `document db replacing unionWith`,
+      this.getCustomersFromQuery.name,
+      session,
+      account.id
+    );
+    // Add lookups for each additional collection to the pipeline
+    // Step 1: Create new collections from each set with a new _id and rename _id to customerId
+    const newCollectionNames = await Promise.all(
+      sets.map(async (collName, index) => {
+        const newCollName = `new_${collName}`;
+        this.debug(
+          `document db new col name ${collName}`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+        const collectionHandle = this.connection.db.collection(collName);
+        await collectionHandle
+          .aggregate([
+            {
+              $addFields: { customerId: '$_id' },
+            },
+            {
+              $project: { _id: 0 },
+            },
+            {
+              $out: newCollName,
+            },
+          ])
+          .toArray(); // Execute the aggregation pipeline and create new collections
+        return newCollName;
+      })
+    );
+    //console.log("union aggregation is", JSON.stringify(unionAggregation, null, 2 ));
+    // Step 2: Bulk insert documents from each new collection into a final collection, in batches
+    const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+    const finalCollection = `${finalCollectionPrepend}${collectionName}`;
+    await Promise.all(
+      newCollectionNames.map(async (newCollName) => {
+        const cursor = this.connection.db.collection(newCollName).find();
+        let batch = [];
+        while (await cursor.hasNext()) {
+          const doc = await cursor.next();
+          batch.push({
+            insertOne: {
+              document: doc,
+            },
+          });
+
+          if (batch.length >= BATCH_SIZE) {
+            await this.connection.db
+              .collection(finalCollection)
+              .bulkWrite(batch);
+            batch = []; // Reset the batch for the next group of documents
+          }
+        }
+
+        // Process any remaining documents in the last batch
+        if (batch.length > 0) {
+          await this.connection.db.collection(finalCollection).bulkWrite(batch);
+        }
+      })
+    );
+
+    // Step 3 AND CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
+    if (andOr === 'and') {
+      // Step 3: Aggregate in finalCollection to group by customerId and project it back as the _id
+      await this.connection.db
+        .collection(finalCollection)
+        .aggregate([
+          {
+            $group: {
+              _id: '$customerId', // Group by customerId
+              count: { $sum: 1 },
+              customerId: { $first: '$customerId' },
+            },
+          },
+          { $match: { count: sets.length } },
+          {
+            $project: {
+              _id: '$customerId',
+            },
+          },
+          {
+            $out: thisCollectionName, // Output the final aggregated documents into the same collection
+          },
+        ])
+        .toArray();
+    }
+    // Step 3 OR CASE: Aggregate in finalCollection to group by customerId and project it back as the _id
+    else {
+      await this.connection.db
+        .collection(finalCollection)
+        .aggregate([
+          {
+            $group: {
+              _id: '$customerId', // Group by customerId
+              customerId: { $first: '$customerId' },
+            },
+          },
+          {
+            $project: {
+              _id: '$customerId',
+            },
+          },
+          {
+            $out: thisCollectionName, // Output the final aggregated documents into the same collection
+          },
+        ])
+        .toArray();
+    }
+
+    //drop all intermediate collections
+    try {
+      this.debug(
+        `trying to release finalcollection`,
+        this.getCustomersFromQuery.name,
+        session,
+        account.id
+      );
+      //toggle for testing segments
+      await this.connection.db.collection(finalCollection).drop();
+      this.debug(
+        `dropped successfully`,
+        this.getCustomersFromQuery.name,
+        session,
+        account.id
+      );
+    } catch (e) {
+      this.debug(
+        `error dropping collection: ${e}`,
+        this.getCustomersFromQuery.name,
+        session,
+        account.id
+      );
+    }
+
+    newCollectionNames.map(async (collection) => {
+      try {
+        this.debug(
+          `trying to release collection`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+        //toggle for testing segments
+        await this.connection.db.collection(collection).drop();
+        this.debug(
+          `dropped successfully`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+      } catch (e) {
+        this.debug(
+          `error dropping collection: ${e}`,
+          this.getCustomersFromQuery.name,
+          session,
+          account.id
+        );
+      }
+    });
+  }
+
+  /*
    *
    *
    * Takes in a segment query (inclusion criteria) and returns a string that is the name of a mongo collection of customers not customerIds
@@ -2566,34 +2816,43 @@ export class CustomersService {
         account.id
       );
       const unionAggregation: any[] = [];
+      let collectionHandle = this.connection.db.collection(thisCollectionName);
       //if (sets.length > 1) {
       // Add each additional collection to the pipeline for union
-      sets.forEach((collName) => {
-        //console.log("the set is", collName);
-        unionAggregation.push({ $unionWith: { coll: collName } });
-      });
-      // Group by customerId and count occurrences
-      unionAggregation.push(
-        { $group: { _id: '$_id', count: { $sum: 1 } } },
-        //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
-        { $match: { count: sets.length } } // Match only IDs present in all subqueries
-      );
-      //} else if (sets.length === 1) {
-      //  console.log("sets length 1");
-      // If there's only one collection, no matching
-      //} else {
-      //  console.log("No collections to process.");
-      //  return; // Exit if there are no collections
-      //}
-      unionAggregation.push({ $out: thisCollectionName });
-
-      //console.log("the first collection is", thisCollectionName);
-      //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
-
-      // Perform the aggregation on the first collection
-      const collectionHandle =
-        this.connection.db.collection(thisCollectionName);
-      await collectionHandle.aggregate(unionAggregation).toArray();
+      if (process.env.DOCUMENT_DB === 'true') {
+        await this.documentDBanySegmentCase(
+          account,
+          session,
+          sets,
+          collectionName,
+          thisCollectionName,
+          'final_and_cfc_',
+          'and'
+        );
+      } else {
+        sets.forEach((collName) => {
+          //console.log("the set is", collName);
+          unionAggregation.push({ $unionWith: { coll: collName } });
+        });
+        // Group by customerId and count occurrences
+        unionAggregation.push(
+          { $group: { _id: '$_id', count: { $sum: 1 } } },
+          //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
+          { $match: { count: sets.length } } // Match only IDs present in all subqueries
+        );
+        //} else if (sets.length === 1) {
+        //  console.log("sets length 1");
+        // If there's only one collection, no matching
+        //} else {
+        //  console.log("No collections to process.");
+        //  return; // Exit if there are no collections
+        //}
+        unionAggregation.push({ $out: thisCollectionName });
+        //console.log("the first collection is", thisCollectionName);
+        //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
+        // Perform the aggregation on the first collection
+        await collectionHandle.aggregate(unionAggregation).toArray();
+      }
 
       if (topLevel) {
         //for each count drop the collections up to the last one
@@ -2674,6 +2933,7 @@ export class CustomersService {
       );
 
       const unionAggregation: any[] = [];
+      const collectionHandle = this.connection.db.collection(sets[0]);
       /*
       [
         { $group: { _id: "$customerId" } }
@@ -2699,24 +2959,34 @@ export class CustomersService {
         account.id
       );
 
-      // Add each additional collection to the pipeline
-      if (sets.length > 1) {
-        sets.forEach((collName) => {
-          unionAggregation.push({ $unionWith: { coll: collName } });
-          //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
-        });
+      if (process.env.DOCUMENT_DB === 'true') {
+        await this.documentDBanySegmentCase(
+          account,
+          session,
+          sets,
+          collectionName,
+          thisCollectionName,
+          'final_or_cfq_'
+        );
+      } else {
+        // Add each additional collection to the pipeline
+        if (sets.length > 1) {
+          sets.forEach((collName) => {
+            unionAggregation.push({ $unionWith: { coll: collName } });
+            //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
+          });
+        }
+        //unique users
+        //unionAggregation.push({ $group: { _id: "$customerId" } });
+        unionAggregation.push({ $group: { _id: '$_id' } });
+
+        // dump results to thisCollectionName
+        unionAggregation.push({ $out: thisCollectionName });
+
+        //console.log("the first collection is", sets[0]);
+        // Perform the aggregation on the first collection
+        await collectionHandle.aggregate(unionAggregation).toArray();
       }
-      //unique users
-      //unionAggregation.push({ $group: { _id: "$customerId" } });
-      unionAggregation.push({ $group: { _id: '$_id' } });
-
-      // dump results to thisCollectionName
-      unionAggregation.push({ $out: thisCollectionName });
-
-      //console.log("the first collection is", sets[0]);
-      // Perform the aggregation on the first collection
-      const collectionHandle = this.connection.db.collection(sets[0]);
-      await collectionHandle.aggregate(unionAggregation).toArray();
 
       if (topLevel) {
         //for each count drop the collections up to the last one
@@ -2862,33 +3132,46 @@ export class CustomersService {
             },
             async () => {
               const unionAggregation: any[] = [];
-              //if (sets.length > 1) {
-              // Add each additional collection to the pipeline for union
-              sets.forEach((collName) => {
-                //console.log("the set is", collName);
-                unionAggregation.push({ $unionWith: { coll: collName } });
-              });
-              // Group by customerId and count occurrences
-              unionAggregation.push(
-                { $group: { _id: '$_id', count: { $sum: 1 } } },
-                //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
-                { $match: { count: sets.length } } // Match only IDs present in all subqueries
-              );
-              //} else if (sets.length === 1) {
-              //  console.log("sets length 1");
-              // If there's only one collection, no matching
-              //} else {
-              //  console.log("No collections to process.");
-              //  return; // Exit if there are no collections
-              //}
-              unionAggregation.push({ $out: thisCollectionName });
+              // Perform the aggregation on the first collection
+              const collectionHandle =
+                this.connection.db.collection(thisCollectionName);
+
+              if (process.env.DOCUMENT_DB === 'true') {
+                await this.documentDBanySegmentCase(
+                  account,
+                  session,
+                  sets,
+                  collectionName,
+                  thisCollectionName,
+                  'final_and_scfq_',
+                  'and'
+                );
+              } else {
+                //if (sets.length > 1) {
+                // Add each additional collection to the pipeline for union
+                sets.forEach((collName) => {
+                  //console.log("the set is", collName);
+                  unionAggregation.push({ $unionWith: { coll: collName } });
+                });
+                // Group by customerId and count occurrences
+                unionAggregation.push(
+                  { $group: { _id: '$_id', count: { $sum: 1 } } },
+                  //{ $group: { _id: "$customerId", count: { $sum: 1 } } },
+                  { $match: { count: sets.length } } // Match only IDs present in all subqueries
+                );
+                //} else if (sets.length === 1) {
+                //  console.log("sets length 1");
+                // If there's only one collection, no matching
+                //} else {
+                //  console.log("No collections to process.");
+                //  return; // Exit if there are no collections
+                //}
+                unionAggregation.push({ $out: thisCollectionName });
+              }
 
               //console.log("the first collection is", thisCollectionName);
               //console.log("union aggreagation is", JSON.stringify(unionAggregation,null,2));
 
-              // Perform the aggregation on the first collection
-              const collectionHandle =
-                this.connection.db.collection(thisCollectionName);
               await collectionHandle.aggregate(unionAggregation).toArray();
             }
           );
@@ -2942,29 +3225,36 @@ export class CustomersService {
           );
 
           const unionAggregation: any[] = [];
-          /*
-        [
-          { $group: { _id: "$customerId" } }
-        ];
-        */
-          // Add each additional collection to the pipeline
-          if (sets.length > 1) {
-            sets.forEach((collName) => {
-              unionAggregation.push({ $unionWith: { coll: collName } });
-              //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
-            });
+
+          if (process.env.DOCUMENT_DB === 'true') {
+            await this.documentDBanySegmentCase(
+              account,
+              session,
+              sets,
+              collectionName,
+              thisCollectionName,
+              'final_or_gscfq_'
+            );
+          } else {
+            // Add each additional collection to the pipeline
+            if (sets.length > 1) {
+              sets.forEach((collName) => {
+                unionAggregation.push({ $unionWith: { coll: collName } });
+                //unionAggregation.push({ $unionWith: { coll: collName, pipeline: [{ $group: { _id: "$customerId" } }] } });
+              });
+            }
+            //unique users
+            //unionAggregation.push({ $group: { _id: "$customerId" } });
+            unionAggregation.push({ $group: { _id: '$_id' } });
+
+            // dump results to thisCollectionName
+            unionAggregation.push({ $out: thisCollectionName });
+
+            //console.log("the first collection is", sets[0]);
+            // Perform the aggregation on the first collection
+            const collectionHandle = this.connection.db.collection(sets[0]);
+            await collectionHandle.aggregate(unionAggregation).toArray();
           }
-          //unique users
-          //unionAggregation.push({ $group: { _id: "$customerId" } });
-          unionAggregation.push({ $group: { _id: '$_id' } });
-
-          // dump results to thisCollectionName
-          unionAggregation.push({ $out: thisCollectionName });
-
-          //console.log("the first collection is", sets[0]);
-          // Perform the aggregation on the first collection
-          const collectionHandle = this.connection.db.collection(sets[0]);
-          await collectionHandle.aggregate(unionAggregation).toArray();
 
           if (topLevel) {
             //for each count drop the collections up to the last one
@@ -3443,25 +3733,32 @@ export class CustomersService {
 
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
-        await queryRunner.startTransaction();
 
         const stepIds = [];
-        for (const journeyId of journeyIds) {
-          const steps =
-            await this.stepsService.transactionalfindAllByTypeInJourney(
-              account,
-              StepType.MESSAGE,
-              journeyId,
-              queryRunner,
-              session
-            );
-          stepIds.push(...steps.map((step) => step.id));
+
+        try {
+          for (const journeyId of journeyIds) {
+            const steps =
+              await this.stepsService.transactionalfindAllByTypeInJourney(
+                account,
+                StepType.MESSAGE,
+                journeyId,
+                queryRunner,
+                session
+              );
+            stepIds.push(...steps.map((step) => step.id));
+          }
+        } catch (error) {
+          this.error(error, this.customersFromMessageStatement.name, session);
+          throw error;
+        } finally {
+          await queryRunner.release();
         }
 
         console.log('step ids are,', JSON.stringify(stepIds, null, 2));
 
         const userIdCondition = `userId = '${userId}'`;
-        let sqlQuery = `SELECT customerId FROM message_status WHERE `;
+        let sqlQuery = `SELECT customerId FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE `;
 
         if (
           type === 'Email' ||
@@ -3586,7 +3883,7 @@ export class CustomersService {
 
           // to do this needs to be tested on a very large set of customers to check streaming logic is sound
 
-          stream.on('data', async (rows: Row[]) => {
+          stream.on('data', async (rows: ClickHouseRow[]) => {
             stream.pause();
 
             for (const row of rows) {
@@ -3607,7 +3904,7 @@ export class CustomersService {
             //stream.resume();
 
             /*
-          rows.forEach((row: Row) => {
+          rows.forEach((row: ClickHouseRow) => {
             const cleanedText = row.text.replace(/^"(.*)"$/, '$1'); // Removes surrounding quotes
             console.log("cleaned text is", cleanedText);
             const objectId = new Types.ObjectId(cleanedText);
@@ -4076,17 +4373,21 @@ export class CustomersService {
    *
    * @returns string
    */
-  async getPrimaryKeyStrict(workspaceId: string, session: string): Promise<CustomerKeysDocument> {
-    let primaryKey: CustomerKeysDocument = await this.cacheService.getIgnoreError(
-      "PrimaryKey",
-      workspaceId,
-      async () => {
-        return await this.CustomerKeysModel.findOne({
-          workspaceId,
-          isPrimary: true,
-        });
-      }
-    );
+  async getPrimaryKeyStrict(
+    workspaceId: string,
+    session: string
+  ): Promise<CustomerKeysDocument> {
+    let primaryKey: CustomerKeysDocument =
+      await this.cacheService.getIgnoreError(
+        'PrimaryKey',
+        workspaceId,
+        async () => {
+          return await this.CustomerKeysModel.findOne({
+            workspaceId,
+            isPrimary: true,
+          });
+        }
+      );
 
     return primaryKey;
   }
@@ -4349,7 +4650,7 @@ export class CustomersService {
           mongoQuery.source = 'mobile';
           //console.log("mongoquery in eventssegment is ", JSON.stringify(mongoQuery, null, 2) );
 
-          const aggregationPipelineMobile: any[] = [
+          let aggregationPipelineMobile: any[] = [
             { $match: mongoQuery },
             {
               $addFields: {
@@ -4381,17 +4682,28 @@ export class CustomersService {
             },
           },
           */
-            {
+          ];
+          if (process.env.DOCUMENT_DB === 'true') {
+            aggregationPipelineMobile.push({
+              $merge: {
+                into: 'events_test_col', //intermediateCollection, // specify the target collection name
+                on: '_id', // assuming '_id' is your unique identifier
+                whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
+                whenNotMatched: 'insert', // inserts the document if no match is found
+              },
+            });
+          } else {
+            aggregationPipelineMobile.push({
               $merge: {
                 into: intermediateCollection, // specify the target collection name
                 on: '_id', // assuming '_id' is your unique identifier
                 whenMatched: 'keepExisting', // prevents updates to existing documents; consider "keepExisting" if you prefer not to error out
                 whenNotMatched: 'insert', // inserts the document if no match is found
               },
-            },
-            //to do
-          ];
+            });
+          }
 
+          //to do
           this.debug(
             'aggregate mobile query is/n\n',
             this.customersFromEventStatement.name,
@@ -4411,6 +4723,38 @@ export class CustomersService {
             await this.eventsService.getCustomersbyEventsMongo(
               aggregationPipelineMobile
             );
+
+          if (process.env.DOCUMENT_DB === 'true') {
+            // here we need to add the temp collection back into
+            /*
+            const BATCH_SIZE = +process.env.DOCUMENT_DB_BATCH_SIZE || 50000;
+            const finalCollection = `${finalCollectionPrepend}${collectionName}`;
+            await Promise.all(
+        
+            const cursor = this.connection.db.collection(newCollName).find();
+            let batch = [];
+            while (await cursor.hasNext()) {
+              const doc = await cursor.next();
+              batch.push({
+                insertOne: {
+                  document: doc,
+                },
+              });
+
+              if (batch.length >= BATCH_SIZE) {
+                await this.connection.db
+                  .collection(finalCollection)
+                  .bulkWrite(batch);
+                batch = []; // Reset the batch for the next group of documents
+              }
+            }
+
+              // Process any remaining documents in the last batch
+              if (batch.length > 0) {
+                await this.connection.db.collection(finalCollection).bulkWrite(batch);
+              }
+              */
+          }
 
           // we do one more merge with mobile users for those who may include the event correlationValues in their other_ids field
           const aggregationPipelineMobileOtherIds: any[] = [
@@ -4886,25 +5230,7 @@ export class CustomersService {
       // }).exec();
       if (!customer) throw new Error('Person not found');
     }
-    this.debug(
-      `the query is: ${JSON.stringify(query, null, 2)}`,
-      this.checkCustomerMatchesQuery.name,
-      session,
-      account.id
-    );
-    this.debug(
-      `the customer is: ${JSON.stringify(customer, null, 2)}`,
-      this.checkCustomerMatchesQuery.name,
-      session,
-      account.id
-    );
     if (query.type === 'all') {
-      this.debug(
-        'the query has all (AND',
-        this.checkCustomerMatchesQuery.name,
-        session,
-        account.id
-      );
       // 'all' logic: All conditions must be satisfied
       if (!query.statements || query.statements.length === 0) {
         // If no statements are provided, return false
@@ -4923,12 +5249,6 @@ export class CustomersService {
       );
       return results.every((result) => result);
     } else if (query.type === 'any') {
-      this.debug(
-        'the query has any (OR)',
-        this.checkCustomerMatchesQuery.name,
-        session,
-        account.id
-      );
       // 'any' logic: At least one condition must be satisfied
       if (!query.statements || query.statements.length === 0) {
         // If no statements are provided, return true
@@ -4947,17 +5267,6 @@ export class CustomersService {
       );
       return results.some((result) => result);
     } else {
-      //shouldnt get here
-      this.debug(
-        `shouldnt get here, what is query type?: ${JSON.stringify(
-          query.type,
-          null,
-          2
-        )}`,
-        this.checkCustomerMatchesQuery.name,
-        session,
-        account.id
-      );
     }
     return false;
   }
@@ -5132,8 +5441,8 @@ export class CustomersService {
     const workspaceIdCondition = `workspaceId = '${workspace.id}'`;
     //to do change clickhouse?
     //const workspaceIdCondition = `userId = '${workspace.id}'`;
-    let sqlQuery = `SELECT COUNT(*) FROM message_status WHERE `;
-    //let sqlQuery = `SELECT * FROM message_status WHERE `;
+    let sqlQuery = `SELECT COUNT(*) FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE `;
+    //let sqlQuery = `SELECT * FROM ${ClickHouseTable.MESSAGE_STATUS} WHERE `;
 
     if (
       type === 'Email' ||
@@ -5206,7 +5515,7 @@ export class CustomersService {
         account.id
       );
 
-      //const testQuery = "SELECT COUNT(*) FROM message_status" ;
+      //const testQuery = "SELECT COUNT(*) FROM ${ClickHouseTable.MESSAGE_STATUS}" ;
       const countEvents = await this.clickhouseClient.query({
         query: sqlQuery,
         format: 'CSV',
@@ -5215,8 +5524,8 @@ export class CustomersService {
 
       let countOfEvents = '0';
       const stream = countEvents.stream();
-      stream.on('data', (rows: Row[]) => {
-        rows.forEach((row: Row) => {
+      stream.on('data', (rows: ClickHouseRow[]) => {
+        rows.forEach((row: ClickHouseRow) => {
           //console.log('this is the data', row.text);
           countOfEvents = row.text;
         });
@@ -5928,34 +6237,6 @@ export class CustomersService {
         );
       }
 
-      const docs = await this.CustomerModel.aggregate([
-        {
-          $match: {
-            workspaceId: workspace.id,
-            isAnonymous: false,
-          },
-        },
-        {
-          $group: {
-            _id: `$${passedPK.asAttribute.key}`,
-            count: { $sum: 1 },
-            docs: { $push: '$$ROOT' },
-          },
-        },
-        {
-          $match: {
-            count: { $gt: 1 },
-          },
-        },
-      ]).option({ allowDiskUse: true });
-
-      if (docs?.length) {
-        throw new HttpException(
-          "Selected primary key can't be used cause it's value has duplicates among already existing users.",
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
       const folderPath = 'import-errors';
       const errorFileName = `errors-${fileData.fileKey}.csv`;
       const fullPath = path.join(folderPath, errorFileName);
@@ -5975,20 +6256,25 @@ export class CustomersService {
       const promisesList = [];
 
       const readPromise = new Promise<{
+        total: number;
         created: number;
         updated: number;
         skipped: number;
+        final: number;
       }>(async (resolve, reject) => {
         const s3CSVStream = await this.s3Service.getImportedCSVReadStream(
           fileData.fileKey
         );
+        let total = 0;
         let created = 0;
         let updated = 0;
         let skipped = 0;
+        let final = 0;
 
         const csvStream = fastcsv
           .parse({ headers: true })
           .on('data', async (data) => {
+            total++;
             let skippedReason = '';
             let convertedPKValue;
 
@@ -6020,54 +6306,55 @@ export class CustomersService {
               );
               return;
             } else {
-              currentBatch.push(convertedPKValue);
-
-              if (currentBatch.length >= 10000) {
-                promisesList.push(
-                  (async () => {
-                    const { createdCount, updatedCount } =
-                      await this.countCreateUpdateWithBatch(
-                        passedPK.asAttribute.key,
-                        Array.from(currentBatch)
-                      );
-                    created += createdCount;
-                    updated += updatedCount;
-                  })()
-                );
-                currentBatch = [];
-              }
+              // currentBatch.push(convertedPKValue);
+              // if (currentBatch.length >= 10000) {
+              //   promisesList.push(
+              //     (async () => {
+              //       const { createdCount, updatedCount } =
+              //         await this.countCreateUpdateWithBatch(
+              //           passedPK.asAttribute.key,
+              //           Array.from(currentBatch)
+              //         );
+              //       created += createdCount;
+              //       updated += updatedCount;
+              //     })()
+              //   );
+              //   currentBatch = [];
+              // }
             }
           })
           .on('end', async () => {
-            if (currentBatch.length > 0) {
-              promisesList.push(
-                (async () => {
-                  const { createdCount, updatedCount } =
-                    await this.countCreateUpdateWithBatch(
-                      passedPK.asAttribute.key,
-                      Array.from(currentBatch)
-                    );
-                  created += createdCount;
-                  updated += updatedCount;
-                })()
-              );
-              currentBatch = [];
-            }
+            // if (currentBatch.length > 0) {
+            //   promisesList.push(
+            //     (async () => {
+            //       const { createdCount, updatedCount } =
+            //         await this.countCreateUpdateWithBatch(
+            //           passedPK.asAttribute.key,
+            //           Array.from(currentBatch)
+            //         );
+            //       created += createdCount;
+            //       updated += updatedCount;
+            //     })()
+            //   );
+            //   currentBatch = [];
+            // }
 
-            await Promise.all(promisesList);
+            // await Promise.all(promisesList);
 
             writeErrorsStream.end();
             await new Promise((resolve2) =>
               writeErrorsStream.on('finish', resolve2)
             );
 
-            resolve({ created, updated, skipped });
+            resolve({ total, created, updated, skipped, final });
           });
 
         s3CSVStream.pipe(csvStream);
       });
 
       const countResults = await readPromise;
+
+      countResults.final = countResults.total - countResults.skipped;
 
       let uploadResult = '';
       if (countResults.skipped > 0) {
@@ -6158,34 +6445,6 @@ export class CustomersService {
         );
       }
 
-      const docs = await this.CustomerModel.aggregate([
-        {
-          $match: {
-            workspaceId: workspace.id,
-            isAnonymous: false,
-          },
-        },
-        {
-          $group: {
-            _id: `$${passedPK.asAttribute.key}`,
-            count: { $sum: 1 },
-            docs: { $push: '$$ROOT' },
-          },
-        },
-        {
-          $match: {
-            count: { $gt: 1 },
-          },
-        },
-      ]).option({ allowDiskUse: true });
-
-      if (docs?.length) {
-        throw new HttpException(
-          "Selected primary key can't be used cause it's value has duplicates among already existing users.",
-          HttpStatus.BAD_REQUEST
-        );
-      }
-
       if (!savedPK && passedPK) {
         const afterSaveNewPK = await this.CustomerKeysModel.findOneAndUpdate(
           {
@@ -6226,7 +6485,7 @@ export class CustomersService {
         segmentId = data.id;
       }
 
-      await this.importsQueue.add('import', {
+      await Producer.add(QueueType.IMPORTS, {
         fileData,
         clearedMapping,
         account,
@@ -6234,7 +6493,7 @@ export class CustomersService {
         passedPK,
         session,
         segmentId,
-      });
+      }, 'import');
 
       return;
     } catch (error) {
@@ -6325,6 +6584,15 @@ export class CustomersService {
 
         newPK.isPrimary = true;
         await newPK.save({ session: clientSession });
+        const collection = this.connection.db.collection('customers');
+        await createIndexIfNotExists(
+          collection,
+          { [newPK.key]: 1, workspaceId: 1 },
+          {
+            unique: true,
+            partialFilterExpression: { [newPK.key]: { $exists: true } },
+          }
+        );
       }
     } catch (error) {
       this.error(error, this.updatePrimaryKey.name, session);

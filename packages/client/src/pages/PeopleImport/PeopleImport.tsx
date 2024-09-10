@@ -62,6 +62,8 @@ enum ValidationError {
 }
 
 export interface PreviewImportResults {
+  total: number;
+  final: number;
   updated: number;
   created: number;
   skipped: number;

@@ -15,7 +15,6 @@ import { AccountsService } from '../accounts/accounts.service';
 import { TemplatesService } from '../templates/templates.service';
 import { WorkflowsService } from '../workflows/workflows.service';
 import { AudiencesService } from '../audiences/audiences.service';
-import { BullModule } from '@nestjs/bullmq';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
 
@@ -44,22 +43,6 @@ describe('EventsController', () => {
         MongooseModule.forFeature([
           { name: Customer.name, schema: CustomerSchema },
         ]),
-        BullModule.forRoot({
-          connection: {
-            host: process.env.REDIS_HOST,
-            port: parseInt(process.env.REDIS_PORT),
-            password: process.env.REDIS_PASSWORD,
-          },
-        }),
-        BullModule.registerQueue({
-          name: '{message}',
-        }),
-        BullModule.registerQueue({
-          name: '{slack}',
-        }),
-        BullModule.registerQueue({
-          name: '{events}',
-        }),
         WinstonModule.forRootAsync({
           useFactory: () => ({
             level: 'debug',

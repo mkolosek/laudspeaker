@@ -1,8 +1,8 @@
 export interface CustomerSearchOptions {
   primaryKey?: {
-    name?: string,
-    value?: string
-  },
-  messageChannels?: Record<string, any>,
-  correlationValue?: string
+    name?: string;
+    value?: string;
+  };
+  messageChannels?: Record<string, any>;
+  correlationValue?: string;
 }

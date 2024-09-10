@@ -24,7 +24,12 @@ import { OrganizationPlan } from '../organizations/entities/organization-plan.en
     MongooseModule.forFeature([
       { name: CustomerKeys.name, schema: CustomerKeysSchema },
     ]),
-    TypeOrmModule.forFeature([Account, Workspaces, Organization, OrganizationPlan]),
+    TypeOrmModule.forFeature([
+      Account,
+      Workspaces,
+      Organization,
+      OrganizationPlan,
+    ]),
     forwardRef(() => AuthModule),
     forwardRef(() => CustomersModule),
     forwardRef(() => JourneysModule),

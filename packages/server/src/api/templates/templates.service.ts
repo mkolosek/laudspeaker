@@ -25,12 +25,6 @@ import {
   WebhookData,
   WebhookMethod,
 } from './entities/template.entity';
-import {
-  InjectQueue,
-  OnQueueEvent,
-  QueueEventsHost,
-  QueueEventsListener,
-} from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { Installation } from '../slack/entities/installation.entity';
 import { SlackService } from '../slack/slack.service';
@@ -48,10 +42,11 @@ import wait from '../../utils/wait';
 import { ModalsService } from '../modals/modals.service';
 import { WebsocketGateway } from '../../websockets/websocket.gateway';
 import { CacheService } from '@/common/services/cache.service';
+import { QueueType } from '@/common/services/queue/types/queue-type';
+import { Producer } from '@/common/services/queue/classes/producer';
 
 @Injectable()
-@QueueEventsListener('message')
-export class TemplatesService extends QueueEventsHost {
+export class TemplatesService {
   private tagEngine = new Liquid();
 
   constructor(
@@ -66,12 +61,8 @@ export class TemplatesService extends QueueEventsHost {
     private websocketGateway: WebsocketGateway,
     @Inject(SlackService) private slackService: SlackService,
     @Inject(ModalsService) private modalsService: ModalsService,
-    @InjectQueue('{message}') private readonly messageQueue: Queue,
-    @InjectQueue('{webhooks}') private readonly webhooksQueue: Queue,
-    @InjectQueue('{slack}') private readonly slackQueue: Queue,
     @Inject(CacheService) private cacheService: CacheService
   ) {
-    super();
     this.tagEngine.registerFilter('date', (input, formatString) => {
       const date = input === 'now' ? new Date() : parseISO(input);
       // Adjust the formatString to fit JavaScript's date formatting if necessary
@@ -173,151 +164,6 @@ export class TemplatesService extends QueueEventsHost {
         session: session,
         user: user,
       })
-    );
-  }
-
-  @OnQueueEvent('active')
-  onActive(args: { jobId: string; prev?: string }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${args.prev} ${id}`,
-      `templates.service.ts:TemplatesService.onActive()`
-    );
-  }
-
-  @OnQueueEvent('added')
-  onAdded(args: { jobId: string; name: string }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${args.name} ${id}`,
-      `templates.service.ts:TemplatesService.onAdded()`
-    );
-  }
-
-  @OnQueueEvent('cleaned')
-  onCleaned(args: { count: string }, id: string) {
-    this.logger.debug(
-      `${args.count} ${id}`,
-      `templates.service.ts:TemplatesService.onCleaned()`
-    );
-  }
-
-  @OnQueueEvent('completed')
-  onCompleted(
-    args: { jobId: string; returnvalue: string; prev?: string },
-    id: string
-  ) {
-    this.logger.debug(
-      `${args.jobId} ${args.returnvalue} ${args.prev} ${id}`,
-      `templates.service.ts:TemplatesService.onCompleted()`
-    );
-  }
-
-  @OnQueueEvent('delayed')
-  onDelayed(args: { jobId: string; delay: number }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${args.delay} ${id}`,
-      `templates.service.ts:TemplatesService.onDelayed()`
-    );
-  }
-
-  @OnQueueEvent('drained')
-  onDrained(id: string) {
-    this.logger.debug(
-      `${id}`,
-      `templates.service.ts:TemplatesService.onDrained()`
-    );
-  }
-
-  @OnQueueEvent('duplicated')
-  onDuplicated(args: { jobId: string }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${id}`,
-      `templates.service.ts:TemplatesService.onDuplicated()`
-    );
-  }
-
-  @OnQueueEvent('error')
-  onError(args: Error) {
-    this.logger.debug(
-      `${args}`,
-      `templates.service.ts:TemplatesService.onError()`
-    );
-  }
-
-  @OnQueueEvent('failed')
-  onFailed(
-    args: { jobId: string; failedReason: string; prev?: string },
-    id: string
-  ) {
-    this.logger.debug(
-      `${args.jobId} ${args.failedReason} ${args.prev} ${id}`,
-      `templates.service.ts:TemplatesService.onFailed()`
-    );
-  }
-
-  @OnQueueEvent('paused')
-  onPaused(args: unknown, id: string) {
-    this.logger.debug(
-      `${id}`,
-      `templates.service.ts:TemplatesService.onPaused()`
-    );
-  }
-
-  @OnQueueEvent('progress')
-  onProgress(args: { jobId: string; data: number | object }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${args.data} ${id}`,
-      `templates.service.ts:TemplatesService.onProgress()`
-    );
-  }
-
-  @OnQueueEvent('removed')
-  onRemoved(args: { jobId: string; prev: string }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${args.prev} ${id}`,
-      `templates.service.ts:TemplatesService.onRemoved()`
-    );
-  }
-
-  @OnQueueEvent('resumed')
-  onResumed(args: unknown, id: string) {
-    this.logger.debug(
-      `${id}`,
-      `templates.service.ts:TemplatesService.onResumed()`
-    );
-  }
-
-  @OnQueueEvent('retries-exhausted')
-  onRetriesExhausted(
-    args: { jobId: string; attemptsMade: string },
-    id: string
-  ) {
-    this.logger.debug(
-      `${args.jobId} ${args.attemptsMade} ${id}`,
-      `templates.service.ts:TemplatesService.onRetriesExhausted()`
-    );
-  }
-
-  @OnQueueEvent('stalled')
-  onStalled(args: { jobId: string }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${id}`,
-      `templates.service.ts:TemplatesService.onStalled()`
-    );
-  }
-
-  @OnQueueEvent('waiting')
-  onWaiting(args: { jobId: string; prev?: string }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${args.prev} ${id}`,
-      `templates.service.ts:TemplatesService.onWaiting()`
-    );
-  }
-
-  @OnQueueEvent('waiting-children')
-  onWaitingChildren(args: { jobId: string }, id: string) {
-    this.logger.debug(
-      `${args.jobId} ${id}`,
-      `templates.service.ts:TemplatesService.onWaitingChildren()`
     );
   }
 
@@ -444,9 +290,7 @@ export class TemplatesService extends QueueEventsHost {
           from = sendgridFromEmail;
         }
 
-        job = await this.messageQueue.add(
-          MessageType.EMAIL,
-          {
+        await Producer.add(QueueType.MESSAGE, {
             accountId: account.id,
             audienceId,
             cc: template.cc,
@@ -465,9 +309,7 @@ export class TemplatesService extends QueueEventsHost {
             templateId,
             text: await this.parseApiCallTags(template.text, filteredTags),
             to: customer.phEmail ? customer.phEmail : customer.email,
-          },
-          { attempts: Number.MAX_SAFE_INTEGER }
-        );
+          }, MessageType.EMAIL);
         if (workspace.emailProvider === 'free3') {
           await account.save();
           await workspace.save();
@@ -479,7 +321,7 @@ export class TemplatesService extends QueueEventsHost {
         } catch (err) {
           return Promise.reject(err);
         }
-        job = await this.slackQueue.add('send', {
+        await Producer.add(QueueType.SLACK, {
           accountId: account.id,
           args: {
             audienceId,
@@ -495,10 +337,10 @@ export class TemplatesService extends QueueEventsHost {
           methodName: 'chat.postMessage',
           token: installation.installation.bot.token,
           trackingEmail: email,
-        });
+        }, 'send');
         break;
       case TemplateType.SMS:
-        job = await this.messageQueue.add(MessageType.SMS, {
+        await Producer.add(QueueType.MESSAGE, {
           accountId: account.id,
           audienceId,
           customerId,
@@ -510,11 +352,11 @@ export class TemplatesService extends QueueEventsHost {
           to: customer.phPhoneNumber || customer.phone,
           token: workspace.smsAuthToken,
           trackingEmail: email,
-        });
+        }, MessageType.SMS);
         break;
       case TemplateType.PUSH:
         // TODO: update for PUSH
-        // job = await this.messageQueue.add(MessageType.PUSH_FIREBASE, {
+        // await this.messageQueue.add(MessageType.PUSH_FIREBASE, {
         //   accountId: account.id,
         //   audienceId,
         //   customerId,
@@ -535,7 +377,7 @@ export class TemplatesService extends QueueEventsHost {
         break;
       case TemplateType.WEBHOOK:
         if (template.webhookData) {
-          job = await this.webhooksQueue.add('whapicall', {
+          await Producer.add(QueueType.WEBHOOKS, {
             template,
             filteredTags,
             audienceId,

@@ -19,34 +19,16 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  postgres:
-    image: postgres:16.3-alpine
-    hostname: postgres
-    container_name: postgres
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: laudspeaker
-    ports:
-      - "5532:5432"
-    restart: always
-    volumes:
-      - ./data:/var/lib/postgresql/data
-    networks:
-      - laudspeaker_default
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
   pgbouncer:
     image: edoburu/pgbouncer:latest
     container_name: pgbouncer
     hostname: pgbouncer
     environment:
       - LISTEN_PORT=6432
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=${POSTGRES_USER:-postgres}
-      - DB_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5433
+      - DB_USER=${POSTGRES_USER:-ubuntu}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-a1W95nENIjaUpa}
       - DB_NAME=laudspeaker
       - AUTH_TYPE=scram-sha-256
       - POOL_MODE=transaction
@@ -56,11 +38,9 @@ services:
       - DEFAULT_POOL_SIZE=100
       - RESERVE_POOL_SIZE=0
       - IGNORE_STARTUP_PARAMETERS=lock_timeout,statement_timeout,idle_in_transaction_session_timeout
-      - ADMIN_USERS=${POSTGRES_USER:-postgres}
+      - ADMIN_USERS=${POSTGRES_USER:-ubuntu}
     ports:
       - "6432:6432"
-    depends_on:
-      - postgres
     networks:
       - laudspeaker_default
     extra_hosts:
@@ -200,8 +180,6 @@ services:
         condition: service_healthy
       kafka-connect1:
         condition: service_healthy
-      s3:
-        condition: service_healthy
     networks:
       - laudspeaker_default
     command:
@@ -219,27 +197,6 @@ services:
       - "1883:1883"
       - "15672:15672"
     container_name: rabbitmq
-    networks:
-      - laudspeaker_default
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  s3:
-    image: quay.io/minio/minio
-    command: "server /data --console-address :9123"
-    restart: always
-    ports:
-      - "9123:9123"
-      - "9001:9000"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    environment:
-      MINIO_ROOT_USER: test
-      MINIO_ROOT_PASSWORD: 12345678
-    container_name: s3
     networks:
       - laudspeaker_default
     extra_hosts:
@@ -267,8 +224,6 @@ services:
     depends_on:
       init-environment:
         condition: service_completed_successfully
-      s3-createbuckets:
-        condition: service_completed_successfully
     env_file:
       - ./local-env/env-docker-compose.prod
     networks:
@@ -284,8 +239,6 @@ services:
       - "8181:3001"
     depends_on:
       init-environment:
-        condition: service_completed_successfully
-      s3-createbuckets:
         condition: service_completed_successfully
     environment:
       LAUDSPEAKER_PROCESS_TYPE: WEB
@@ -308,8 +261,6 @@ services:
     depends_on:
       init-environment:
         condition: service_completed_successfully
-      s3-createbuckets:
-        condition: service_completed_successfully
     environment:
       LAUDSPEAKER_PROCESS_TYPE: QUEUE
     env_file:
@@ -331,29 +282,8 @@ services:
     depends_on:
       init-environment:
         condition: service_completed_successfully
-      s3-createbuckets:
-        condition: service_completed_successfully
     environment:
       LAUDSPEAKER_PROCESS_TYPE: CRON 
-    env_file:
-      - ./local-env/env-docker-compose.prod
-    networks:
-      - laudspeaker_default
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  s3-createbuckets:
-    image: minio/mc
-    depends_on:
-      s3:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      /usr/bin/mc config host add s3 http://s3:9000 test 12345678;
-      /usr/bin/mc mb s3/$$AWS_S3_CUSTOMERS_IMPORT_BUCKET;
-      /usr/bin/mc mb s3/$$AWS_S3_BUCKET;
-      exit 0;
-      "
     env_file:
       - ./local-env/env-docker-compose.prod
     networks:
@@ -368,8 +298,6 @@ services:
     container_name: init-connectors
     depends_on:
       init-environment:
-        condition: service_completed_successfully
-      s3-createbuckets:
         condition: service_completed_successfully
     networks:
       - laudspeaker_default

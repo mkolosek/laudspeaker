@@ -16,6 +16,8 @@ services:
       retries: 20
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   postgres:
     image: postgres:16.3-alpine
@@ -32,6 +34,8 @@ services:
       - ./data:/var/lib/postgresql/data
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   pgbouncer:
     image: edoburu/pgbouncer:latest
@@ -59,6 +63,8 @@ services:
       - postgres
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   mongo:
     image: "mongo:latest"
@@ -84,6 +90,8 @@ services:
       retries: 20
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   clickhouse:
     hostname: clickhouse
@@ -100,6 +108,8 @@ services:
       - "9000:9000"
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   #### START kafka related containers
   zoo1:
@@ -114,6 +124,8 @@ services:
       ALLOW_ANONYMOUS_LOGIN: yes
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   kafka1:
     image: bitnami/kafka:3.6.0
@@ -141,6 +153,8 @@ services:
       - zoo1
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   #### END kafka related containers
 
@@ -168,6 +182,8 @@ services:
       - bash
       - -c
       - /opt/bitnami/kafka/bin/connect-distributed.sh /opt/bitnami/kafka-connect/connect.properties
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   #### END kafka connect related containers
 
   init-environment:
@@ -190,6 +206,8 @@ services:
       - laudspeaker_default
     command:
       - "environment"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   rabbitmq:
     image: rabbitmq:management
@@ -203,6 +221,8 @@ services:
     container_name: rabbitmq
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   s3:
     image: quay.io/minio/minio
@@ -222,6 +242,8 @@ services:
     container_name: s3
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   ping-server:
     image: jaredhanson11/ping-server:latest
@@ -233,6 +255,8 @@ services:
       PORT: 8555
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   laudspeaker-web:
     image: kolosek/laudspeaker
@@ -249,6 +273,8 @@ services:
       - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   laudspeaker-api:
     image: kolosek/laudspeaker-api
@@ -267,6 +293,8 @@ services:
       - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   laudspeaker-queue:
     image: kolosek/laudspeaker-api
@@ -288,6 +316,8 @@ services:
       - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   laudspeaker-cron:
     image: kolosek/laudspeaker-api
@@ -309,6 +339,8 @@ services:
       - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   s3-createbuckets:
     image: minio/mc
@@ -326,6 +358,8 @@ services:
       - ./local-env/env-docker-compose.prod
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   init-connectors:
     build:
@@ -341,6 +375,8 @@ services:
       - laudspeaker_default
     command:
       - "connectors"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # GUIs for all supporting services.
   # currently:
@@ -368,6 +404,8 @@ services:
       DYNAMIC_CONFIG_ENABLED: "true"
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   redis-gui:
     container_name: redis-gui
@@ -384,6 +422,8 @@ services:
       test: wget --no-verbose --tries=1 --spider http://127.0.0.1:5540/api/health/ || exit 1
     networks:
       - laudspeaker_default
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   init-guis:
     profiles:
@@ -400,6 +440,8 @@ services:
       - laudspeaker_default
     command:
       - "guis"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   laudspeaker_default:
